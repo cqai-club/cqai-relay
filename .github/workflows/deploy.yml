@@ -1,0 +1,39 @@
+name: Deploy to shujubang
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: shujubang-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.SHUJUBANG_HOST }}
+          username: ${{ secrets.SHUJUBANG_USER }}
+          key: ${{ secrets.SHUJUBANG_SSH_KEY }}
+          port: ${{ secrets.SHUJUBANG_PORT || 22 }}
+          script_stop: true
+          script: |
+            set -eu
+            APP_DIR=/data/cqai-relay
+            REPO_URL=https://github.com/cqai-club/cqai-relay.git
+            mkdir -p /data
+            if [ ! -d "$APP_DIR/.git" ]; then
+              git clone "$REPO_URL" "$APP_DIR"
+            else
+              git -C "$APP_DIR" fetch origin main
+              git -C "$APP_DIR" reset --hard origin/main
+            fi
+            cd "$APP_DIR"
+            test -f .env
+            docker compose --env-file .env -f docker-compose.deploy.yml up -d --build --remove-orphans
+            docker compose --env-file .env -f docker-compose.deploy.yml ps
+            curl --fail --retry 10 --retry-delay 3 http://127.0.0.1:${APP_PORT:-3002}/api/status >/dev/null
