@@ -3,6 +3,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
     image: cqai-relay:${IMAGE_TAG:-latest}
     container_name: cqai-relay
     restart: unless-stopped
