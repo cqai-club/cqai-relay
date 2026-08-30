@@ -17,13 +17,13 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Package source
-        run: tar --exclude=.git -czf cqai-relay.tgz .
+        run: tar --exclude=.git -czf /tmp/cqai-relay.tgz .
 
       - name: Upload deployment artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: cqai-relay-source
-          path: cqai-relay.tgz
+          path: /tmp/cqai-relay.tgz
           if-no-files-found: error
           retention-days: 1
 
