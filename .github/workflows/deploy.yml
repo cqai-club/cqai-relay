@@ -13,6 +13,16 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      - name: Upload source
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SHUJUBANG_HOST }}
+          username: ${{ secrets.SHUJUBANG_USER }}
+          key: ${{ secrets.SHUJUBANG_SSH_KEY }}
+          port: ${{ secrets.SHUJUBANG_PORT || 22 }}
+          source: "."
+          target: /data/cqai-relay
+          overwrite: true
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.2.2
         with:
@@ -24,14 +34,7 @@ jobs:
           script: |
             set -eu
             APP_DIR=/data/cqai-relay
-            REPO_URL=https://github.com/cqai-club/cqai-relay.git
-            mkdir -p /data
-            if [ ! -d "$APP_DIR/.git" ]; then
-              git clone "$REPO_URL" "$APP_DIR"
-            else
-              git -C "$APP_DIR" fetch origin main
-              git -C "$APP_DIR" reset --hard origin/main
-            fi
+            mkdir -p "$APP_DIR"
             cd "$APP_DIR"
             test -f .env
             docker compose --env-file .env -f docker-compose.deploy.yml up -d --build --remove-orphans
