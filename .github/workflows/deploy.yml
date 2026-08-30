@@ -16,30 +16,53 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
+      - name: Configure SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -eu
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_USER"
+          test -n "$DEPLOY_SSH_KEY"
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          if [ -n "$DEPLOY_KNOWN_HOSTS" ]; then
+            printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            ssh-keyscan -H "$DEPLOY_HOST" > ~/.ssh/known_hosts
+          fi
+          chmod 600 ~/.ssh/known_hosts
+
       - name: Upload source
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          port: ${{ secrets.DEPLOY_PORT || 22 }}
-          source: "."
-          target: /data/cqai-relay
-          overwrite: true
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || 22 }}
+        run: |
+          set -eu
+          tar --exclude=.git -czf /tmp/cqai-relay.tgz .
+          scp -P "$DEPLOY_PORT" /tmp/cqai-relay.tgz "$DEPLOY_USER@$DEPLOY_HOST:/data/cqai-relay/incoming.tgz"
+
       - name: Deploy over SSH
-        uses: appleboy/ssh-action@v1.2.2
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          port: ${{ secrets.DEPLOY_PORT || 22 }}
-          script_stop: true
-          script: |
-            set -eu
-            APP_DIR=/data/cqai-relay
-            mkdir -p "$APP_DIR"
-            cd "$APP_DIR"
-            test -f .env
-            docker compose --env-file .env -f docker-compose.deploy.yml up -d --build --remove-orphans
-            docker compose --env-file .env -f docker-compose.deploy.yml ps
-            curl --fail --retry 10 --retry-delay 3 http://127.0.0.1:${APP_PORT:-3002}/api/status >/dev/null
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || 22 }}
+        run: |
+          set -eu
+          ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" <<'REMOTE'
+          set -eu
+          APP_DIR=/data/cqai-relay
+          cd "$APP_DIR"
+          tar -xzf incoming.tgz
+          rm -f incoming.tgz
+          test -f .env
+          docker compose --env-file .env -f docker-compose.deploy.yml up -d --build --remove-orphans
+          docker compose --env-file .env -f docker-compose.deploy.yml ps
+          APP_PORT=$(sed -n 's/^APP_PORT=//p' .env | tail -1)
+          curl --fail --retry 10 --retry-delay 3 "http://127.0.0.1:${APP_PORT:-3002}/api/status" >/dev/null
+          REMOTE
