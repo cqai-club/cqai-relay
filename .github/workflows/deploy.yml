@@ -16,20 +16,20 @@ jobs:
       - name: Upload source
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: ${{ secrets.SHUJUBANG_HOST }}
-          username: ${{ secrets.SHUJUBANG_USER }}
-          key: ${{ secrets.SHUJUBANG_SSH_KEY }}
-          port: ${{ secrets.SHUJUBANG_PORT || 22 }}
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
           source: "."
           target: /data/cqai-relay
           overwrite: true
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.2.2
         with:
-          host: ${{ secrets.SHUJUBANG_HOST }}
-          username: ${{ secrets.SHUJUBANG_USER }}
-          key: ${{ secrets.SHUJUBANG_SSH_KEY }}
-          port: ${{ secrets.SHUJUBANG_PORT || 22 }}
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
           script_stop: true
           script: |
             set -eu
