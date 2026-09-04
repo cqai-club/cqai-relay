@@ -19,6 +19,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.dev
+      args:
+        GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
+        GOSUMDB: ${GOSUMDB:-sum.golang.google.cn}
     image: new-api-dev:local
     container_name: new-api-dev
     restart: unless-stopped
