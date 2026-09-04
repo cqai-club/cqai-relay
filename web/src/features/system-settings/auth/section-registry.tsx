@@ -21,6 +21,7 @@ import { createSectionRegistry } from '../utils/section-registry'
 import { BasicAuthSection } from './basic-auth-section'
 import { BotProtectionSection } from './bot-protection-section'
 import { CustomOAuthSection } from './custom-oauth/custom-oauth-section'
+import { InternalServiceAuthSection } from './internal-service-auth-section'
 import { OAuthSection } from './oauth-section'
 import { PasskeySection } from './passkey-section'
 
@@ -113,6 +114,11 @@ const AUTH_SECTIONS = [
         }}
       />
     ),
+  },
+  {
+    id: 'internal-services',
+    titleKey: 'Internal Service Authentication',
+    build: () => <InternalServiceAuthSection />,
   },
   {
     id: 'custom-oauth',

@@ -19,6 +19,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.dev
+      args:
+        GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
+        GOSUMDB: ${GOSUMDB:-sum.golang.google.cn}
     image: new-api-dev:local
     container_name: new-api-dev
     restart: unless-stopped
@@ -27,6 +30,7 @@ services:
     volumes:
       - dev_data:/data
     environment:
+      - NEW_API_INTERNAL_TOKEN=${NEW_API_INTERNAL_TOKEN}
       - SQL_DSN=postgresql://root:123456@postgres:5432/new-api
       - REDIS_CONN_STRING=redis://redis
       - TZ=Asia/Shanghai

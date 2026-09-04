@@ -42,6 +42,8 @@ func TestMain(m *testing.M) {
 		&UserSession{},
 		&AuthFlow{},
 		&ExternalIdentityClaim{},
+		&ExternalAccountIdentity{},
+		&AppCredential{},
 		&Token{},
 		&PasskeyCredential{},
 		&TwoFA{},
@@ -72,6 +74,8 @@ func truncateTables(t *testing.T) {
 		DB.Exec("DELETE FROM tasks")
 		DB.Exec("DELETE FROM auth_flows")
 		DB.Exec("DELETE FROM external_identity_claims")
+		DB.Exec("DELETE FROM external_account_identities")
+		DB.Exec("DELETE FROM app_credentials")
 		DB.Exec("DELETE FROM user_sessions")
 		DB.Exec("DELETE FROM passkey_credentials")
 		DB.Exec("DELETE FROM two_fa_backup_codes")

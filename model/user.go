@@ -338,6 +338,24 @@ func IsEmailAvailable(email string, excludeUserID int) (bool, error) {
 	return count == 0, nil
 }
 
+// IsEmailAvailableWithTx is the transaction-scoped variant used when a new
+// account and its external identity binding must be created atomically.
+func IsEmailAvailableWithTx(tx *gorm.DB, email string, excludeUserID int) (bool, error) {
+	email = NormalizeEmail(email)
+	if email == "" {
+		return true, nil
+	}
+	query := emailQuery(tx, email)
+	if excludeUserID > 0 {
+		query = query.Where("id <> ?", excludeUserID)
+	}
+	var count int64
+	if err := query.Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count == 0, nil
+}
+
 func EnsureEmailAvailable(email string, excludeUserID int) error {
 	available, err := IsEmailAvailable(email, excludeUserID)
 	if err != nil {
@@ -969,6 +987,8 @@ func deleteUserAuthenticationData(tx *gorm.DB, userId int) error {
 		return err
 	}
 	for _, authenticationData := range []any{
+		&AppCredential{},
+		&ExternalAccountIdentity{},
 		&TwoFABackupCode{},
 		&TwoFA{},
 		&UserSession{},

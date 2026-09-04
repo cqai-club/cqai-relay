@@ -20,6 +20,8 @@ import { api } from '@/lib/api'
 
 import type {
   ConfirmPaymentComplianceResponse,
+  InternalProvisionTokenResponse,
+  InternalProvisionTokenStatusResponse,
   FetchUpstreamRatiosRequest,
   LogCleanupTask,
   SystemOptionsResponse,
@@ -38,6 +40,38 @@ export async function getSystemOptions() {
 
 export async function updateSystemOption(request: UpdateOptionRequest) {
   const res = await api.put<UpdateOptionResponse>('/api/option/', request)
+  return res.data
+}
+
+export async function getInternalProvisionTokenStatus() {
+  const res = await api.get<InternalProvisionTokenStatusResponse>(
+    '/api/option/internal-token'
+  )
+  return res.data
+}
+
+export async function generateInternalProvisionToken() {
+  const res = await api.post<InternalProvisionTokenResponse>(
+    '/api/option/internal-token/generate'
+  )
+  return res.data
+}
+
+export async function revealInternalProvisionToken(proofToken?: string) {
+  const res = await api.get<InternalProvisionTokenResponse>(
+    '/api/option/internal-token/reveal',
+    {
+      headers: proofToken ? { 'X-Security-Proof': proofToken } : undefined,
+    }
+  )
+  return res.data
+}
+
+export async function updateInternalProvisionToken(token: string) {
+  const res = await api.put<UpdateOptionResponse>(
+    '/api/option/internal-token',
+    { token }
+  )
   return res.data
 }
 
