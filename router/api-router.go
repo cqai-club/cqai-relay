@@ -55,6 +55,7 @@ func SetApiRouter(router *gin.Engine) {
 		// Standard OAuth providers (GitHub, Discord, OIDC, LinuxDO) - unified route
 		apiRouter.GET("/oauth/:provider", middleware.CriticalRateLimit(), middleware.DisableCache(), middleware.TryUserAuth(), controller.HandleOAuth)
 		apiRouter.GET("/ratio_config", middleware.CriticalRateLimit(), controller.GetRatioConfig)
+		apiRouter.POST("/internal/provision", middleware.InternalProvisionAuth(), anonymousRequestBodyLimit, controller.ProvisionExternalAccount)
 
 		apiRouter.POST("/stripe/webhook", anonymousRequestBodyLimit, controller.StripeWebhook)
 		apiRouter.POST("/creem/webhook", anonymousRequestBodyLimit, controller.CreemWebhook)
@@ -195,6 +196,10 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			optionRoute.GET("/", controller.GetOptions)
 			optionRoute.PUT("/", controller.UpdateOption)
+			optionRoute.GET("/internal-token", middleware.DisableCache(), controller.GetInternalProvisionTokenStatus)
+			optionRoute.POST("/internal-token/generate", middleware.DisableCache(), controller.GenerateInternalProvisionToken)
+			optionRoute.GET("/internal-token/reveal", middleware.DisableCache(), middleware.InternalProvisionTokenVerificationRequired(), controller.RevealInternalProvisionToken)
+			optionRoute.PUT("/internal-token", middleware.DisableCache(), controller.UpdateInternalProvisionToken)
 			optionRoute.POST("/payment_compliance", controller.ConfirmPaymentCompliance)
 			optionRoute.GET("/channel_affinity_cache", controller.GetChannelAffinityCacheStats)
 			optionRoute.DELETE("/channel_affinity_cache", controller.ClearChannelAffinityCache)

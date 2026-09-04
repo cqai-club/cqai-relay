@@ -9,6 +9,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+const InternalProvisionTokenReadScope = "internal-provision.token.read"
+
 // SecureVerificationRequired protects channel key disclosure. Other sensitive
 // operations validate their narrower proof scopes in their controller.
 func SecureVerificationRequired() gin.HandlerFunc {
@@ -17,6 +19,15 @@ func SecureVerificationRequired() gin.HandlerFunc {
 			return
 		}
 		c.Set("secure_verified", true)
+		c.Next()
+	}
+}
+
+func InternalProvisionTokenVerificationRequired() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if !RequireSecurityProof(c, InternalProvisionTokenReadScope, []string{"2fa", "passkey"}) {
+			return
+		}
 		c.Next()
 	}
 }

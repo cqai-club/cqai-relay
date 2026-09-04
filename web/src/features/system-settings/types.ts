@@ -39,6 +39,24 @@ export type UpdateOptionResponse = {
   message: string
 }
 
+export type InternalProvisionTokenStatusResponse = {
+  success: boolean
+  message: string
+  data?: {
+    configured: boolean
+    source: 'database' | 'environment' | string
+    encryption_ready: boolean
+  }
+}
+
+export type InternalProvisionTokenResponse = {
+  success: boolean
+  message: string
+  data?: {
+    token: string
+  }
+}
+
 export type ConfirmPaymentComplianceResponse = {
   success: boolean
   message: string

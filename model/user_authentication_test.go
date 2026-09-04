@@ -25,7 +25,15 @@ func TestHardDeleteUserFailsClosedWhenAuthFenceCannotPublish(t *testing.T) {
 	require.NoError(t, DB.Transaction(func(tx *gorm.DB) error {
 		return ClaimExternalIdentityWithTx(tx, ExternalIdentityProviderTelegram, user.TelegramId, user.Id)
 	}))
-	require.NoError(t, DB.Create(&Token{UserId: user.Id, Key: "hard-delete-token"}).Error)
+	token := Token{UserId: user.Id, Key: "hard-delete-token"}
+	require.NoError(t, DB.Create(&token).Error)
+	require.NoError(t, DB.Create(&ExternalAccountIdentity{
+		IdentityKey: "hard-delete-external-identity",
+		Issuer:      "https://auth.example.test/oidc",
+		Subject:     "hard-delete-user",
+		UserId:      user.Id,
+	}).Error)
+	require.NoError(t, DB.Create(&AppCredential{UserId: user.Id, Platform: "lingweave", TokenId: token.Id}).Error)
 	require.NoError(t, DB.Create(&TwoFA{UserId: user.Id, Secret: "secret", IsEnabled: true}).Error)
 	require.NoError(t, DB.Create(&TwoFABackupCode{UserId: user.Id, CodeHash: "hash"}).Error)
 	require.NoError(t, DB.Create(&PasskeyCredential{UserID: user.Id, CredentialID: "credential", PublicKey: "public-key"}).Error)
@@ -67,6 +75,8 @@ func TestHardDeleteUserFailsClosedWhenAuthFenceCannotPublish(t *testing.T) {
 		&UserSession{},
 		&AuthFlow{},
 		&ExternalIdentityClaim{},
+		&ExternalAccountIdentity{},
+		&AppCredential{},
 	} {
 		require.NoError(t, DB.Unscoped().Model(record).Where("user_id = ?", user.Id).Count(&count).Error)
 		assert.EqualValues(t, 1, count)
@@ -85,7 +95,15 @@ func TestHardDeleteUserPublishesTombstoneAndPurgesAuthenticationData(t *testing.
 	require.NoError(t, DB.Transaction(func(tx *gorm.DB) error {
 		return ClaimExternalIdentityWithTx(tx, ExternalIdentityProviderTelegram, user.TelegramId, user.Id)
 	}))
-	require.NoError(t, DB.Create(&Token{UserId: user.Id, Key: "hard-delete-success-token"}).Error)
+	token := Token{UserId: user.Id, Key: "hard-delete-success-token"}
+	require.NoError(t, DB.Create(&token).Error)
+	require.NoError(t, DB.Create(&ExternalAccountIdentity{
+		IdentityKey: "hard-delete-success-external-identity",
+		Issuer:      "https://auth.example.test/oidc",
+		Subject:     "hard-delete-success-user",
+		UserId:      user.Id,
+	}).Error)
+	require.NoError(t, DB.Create(&AppCredential{UserId: user.Id, Platform: "lingweave", TokenId: token.Id}).Error)
 	require.NoError(t, DB.Create(&TwoFA{UserId: user.Id, Secret: "secret", IsEnabled: true}).Error)
 	require.NoError(t, DB.Create(&TwoFABackupCode{UserId: user.Id, CodeHash: "hash"}).Error)
 	require.NoError(t, DB.Create(&PasskeyCredential{UserID: user.Id, CredentialID: "credential-success", PublicKey: "public-key"}).Error)
@@ -118,6 +136,8 @@ func TestHardDeleteUserPublishesTombstoneAndPurgesAuthenticationData(t *testing.
 		&UserSession{},
 		&AuthFlow{},
 		&ExternalIdentityClaim{},
+		&ExternalAccountIdentity{},
+		&AppCredential{},
 	} {
 		require.NoError(t, DB.Unscoped().Model(record).Where("user_id = ?", user.Id).Count(&count).Error)
 		assert.Zero(t, count)

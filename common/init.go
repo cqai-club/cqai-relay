@@ -59,9 +59,12 @@ func InitEnv() {
 	}
 	if os.Getenv("CRYPTO_SECRET") != "" {
 		CryptoSecret = os.Getenv("CRYPTO_SECRET")
+		CryptoSecretPersistent = true
 	} else {
 		CryptoSecret = SessionSecret
+		CryptoSecretPersistent = os.Getenv("SESSION_SECRET") != ""
 	}
+	SetInternalProvisionToken(os.Getenv("NEW_API_INTERNAL_TOKEN"), "environment")
 	if err := InitSessionCookieSettings(); err != nil {
 		log.Fatal(err)
 	}
