@@ -57,6 +57,7 @@ type AccountProvisionInput struct {
 	Password    string
 	DisplayName string
 	Email       string
+	Role        int
 	TokenKey    string
 	TokenQuota  int
 }
@@ -88,7 +89,7 @@ func ProvisionExternalAccount(input AccountProvisionInput) (*AccountProvisionRes
 				Password:    input.Password,
 				DisplayName: input.DisplayName,
 				Email:       input.Email,
-				Role:        common.RoleCommonUser,
+				Role:        input.Role,
 				Status:      common.UserStatusEnabled,
 				Group:       "default",
 			}
@@ -99,6 +100,11 @@ func ProvisionExternalAccount(input AccountProvisionInput) (*AccountProvisionRes
 				}
 				if !available {
 					user.Email = ""
+				}
+			}
+			if user.Role != common.RoleCommonUser {
+				if err := tx.Model(&User{}).Where("id = ?", user.Id).UpdateColumn("role", user.Role).Error; err != nil {
+					return err
 				}
 			}
 			if err := user.InsertWithTx(tx, 0); err != nil {
