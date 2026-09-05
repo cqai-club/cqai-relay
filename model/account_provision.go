@@ -102,11 +102,6 @@ func ProvisionExternalAccount(input AccountProvisionInput) (*AccountProvisionRes
 					user.Email = ""
 				}
 			}
-			if user.Role != common.RoleCommonUser {
-				if err := tx.Model(&User{}).Where("id = ?", user.Id).UpdateColumn("role", user.Role).Error; err != nil {
-					return err
-				}
-			}
 			if err := user.InsertWithTx(tx, 0); err != nil {
 				return err
 			}
