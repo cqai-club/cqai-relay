@@ -28,6 +28,10 @@ type AccountProvisionRequest struct {
 	Platform string `json:"platform"`
 	Email    string `json:"email"`
 	Name     string `json:"name"`
+	// Optional NewAPI numeric role supplied by the trusted bridge
+	// (Account Service). Only 1 (common), 10 (admin), and 100 (root) are
+	// accepted on first creation; existing users are never re-role'd.
+	Role int `json:"role"`
 }
 
 type AccountProvisionResponse struct {
@@ -80,6 +84,7 @@ func ProvisionAccount(request AccountProvisionRequest) (*AccountProvisionRespons
 	if displayName == "" {
 		displayName = "AI Account"
 	}
+	role := normalizeRole(request.Role)
 
 	identityDigest := sha256.Sum256([]byte(issuer + "\x00" + subject))
 	identityKey := fmt.Sprintf("%x", identityDigest)
@@ -100,11 +105,12 @@ func ProvisionAccount(request AccountProvisionRequest) (*AccountProvisionRespons
 		Password:    password,
 		DisplayName: displayName,
 		Email:       email,
+		Role:        role,
 		TokenKey:    tokenKey,
 		// Keep the per-key quota aligned with NewAPI's configured initial user
 		// quota. Never use MaxWalletQuota here: it is a wallet safety boundary,
 		// not an unlimited API-key grant.
-		TokenQuota:  common.QuotaForNewUser,
+		TokenQuota: common.QuotaForNewUser,
 	})
 	if err != nil {
 		switch {
@@ -134,4 +140,14 @@ func ProvisionAccount(request AccountProvisionRequest) (*AccountProvisionRespons
 		Quota:             result.User.Quota,
 		QuotaUsed:         result.User.UsedQuota,
 	}, nil
+}
+
+// normalizeRole restricts provisioning role to common/admin/root. 0 (or any
+// unknown value) means a normal user; provisioning can never elevate beyond
+// the values the trusted bridge is configured to send.
+func normalizeRole(role int) int {
+	if common.IsValidateRole(role) && role > common.RoleCommonUser {
+		return role
+	}
+	return common.RoleCommonUser
 }

@@ -134,6 +134,47 @@ func TestProvisionAccountHandlesConcurrentFirstRequests(t *testing.T) {
 	assert.EqualValues(t, 1, credentialCount)
 }
 
+func TestProvisionAccountAppliesRoleOnlyOnFirstCreation(t *testing.T) {
+	db := setupAccountProvisionTestDB(t)
+	request := AccountProvisionRequest{
+		Issuer:   "https://auth.example.test/oidc",
+		Subject:  "role-user",
+		Platform: "lingweave",
+		Role:     100,
+	}
+
+	first, err := ProvisionAccount(request)
+	require.NoError(t, err)
+	require.True(t, first.UserCreated)
+	var user model.User
+	require.NoError(t, db.First(&user, first.UserId).Error)
+	assert.Equal(t, common.RoleRootUser, user.Role)
+	var persisted model.User
+	require.NoError(t, db.First(&persisted, first.UserId).Error)
+	assert.Equal(t, common.RoleRootUser, persisted.Role)
+
+	// Second provisioning with a different role must not re-role the user.
+	request.Role = common.RoleCommonUser
+	second, err := ProvisionAccount(request)
+	require.NoError(t, err)
+	require.False(t, second.UserCreated)
+	assert.Equal(t, first.UserId, second.UserId)
+	assert.Equal(t, common.RoleRootUser, user.Role)
+	var persistedAfter model.User
+	require.NoError(t, db.First(&persistedAfter, first.UserId).Error)
+	assert.Equal(t, common.RoleRootUser, persistedAfter.Role)
+
+	// Unknown/invalid role falls back to common user.
+	request.Subject = "role-user-2"
+	request.Role = 999
+	res, err := ProvisionAccount(request)
+	require.NoError(t, err)
+	require.True(t, res.UserCreated)
+	var user2 model.User
+	require.NoError(t, db.First(&user2, res.UserId).Error)
+	assert.Equal(t, common.RoleCommonUser, user2.Role)
+}
+
 func TestProvisionAccountRejectsInvalidIdentity(t *testing.T) {
 	_, err := ProvisionAccount(AccountProvisionRequest{
 		Issuer:   "not-a-url",
