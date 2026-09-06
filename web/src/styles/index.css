@@ -123,6 +123,29 @@ For commercial licensing, please contact support@quantumnous.com
   }
 }
 
+/* Deep-space nebula wash behind the whole app in dark mode. Stays very
+ * subtle (alpha ~5-8%) so surfaces, tables and text keep contrast while
+ * every route (public + console) inherits the neon atmosphere. */
+html.dark body {
+  background-image:
+    radial-gradient(
+      1100px 720px at 12% -6%,
+      color-mix(in oklch, var(--chart-1) 7%, transparent),
+      transparent 62%
+    ),
+    radial-gradient(
+      980px 640px at 96% 2%,
+      color-mix(in oklch, var(--chart-3) 6%, transparent),
+      transparent 58%
+    ),
+    radial-gradient(
+      1080px 820px at 52% 118%,
+      color-mix(in oklch, var(--chart-2) 5.5%, transparent),
+      transparent 62%
+    );
+  background-attachment: fixed;
+}
+
 /* Vercel Geist-style skeleton shimmer */
 .skeleton-shimmer {
   background: linear-gradient(
@@ -464,7 +487,7 @@ For commercial licensing, please contact support@quantumnous.com
   }
 }
 
-/* ── Landing page scroll-triggered animations ── */
+/* 鈹€鈹€ Landing page scroll-triggered animations 鈹€鈹€ */
 @keyframes landing-fade-up {
   from {
     opacity: 0;
@@ -542,7 +565,7 @@ For commercial licensing, please contact support@quantumnous.com
   }
 }
 
-/* Micro-interactions — Vercel-style subtle hover/active feedback */
+/* Micro-interactions 鈥?Vercel-style subtle hover/active feedback */
 @media (prefers-reduced-motion: no-preference) {
   [data-slot='card']:not([data-card-hover='false']) {
     transition:
@@ -629,7 +652,7 @@ For commercial licensing, please contact support@quantumnous.com
   contain-intrinsic-size: 0 80px;
 }
 
-/* ── Hero terminal demo animations ── */
+/* 鈹€鈹€ Hero terminal demo animations 鈹€鈹€ */
 @keyframes terminal-demo-blink {
   0%,
   100% {
@@ -673,7 +696,7 @@ For commercial licensing, please contact support@quantumnous.com
   }
 }
 
-/* ── Auto group flowing border ── */
+/* 鈹€鈹€ Auto group flowing border 鈹€鈹€ */
 @property --auto-group-flow-angle {
   syntax: '<angle>';
   inherits: false;
@@ -718,3 +741,710 @@ For commercial licensing, please contact support@quantumnous.com
     display: none;
   }
 }
+
+/* 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+ * "Neon circuit" shared tech effects 鈥?landing + app-wide accents.
+ * Every animation here respects `prefers-reduced-motion` (grouped at the
+ * bottom of the file). Colors are token-driven via `--primary`, `--cyan`,
+ * `--violet` so they follow the active theme preset automatically.
+ * 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
+
+/* Neon accent tokens (driven by the active palette). */
+:root,
+.dark {
+  --glow-cyan: color-mix(in oklch, var(--chart-2) 80%, var(--primary));
+  --glow-violet: color-mix(in oklch, var(--chart-3) 85%, var(--primary));
+}
+
+/* Aura: slowly drifting radial gradients behind a section. Children stack
+ * absolutely-positioned gradient blobs that animate transform. */
+@keyframes neon-aura-drift {
+  0% {
+    transform: translate3d(-4%, -3%, 0) scale(1);
+  }
+  33% {
+    transform: translate3d(4%, 3%, 0) scale(1.12);
+  }
+  66% {
+    transform: translate3d(-2%, 5%, 0) scale(0.95);
+  }
+  100% {
+    transform: translate3d(-4%, -3%, 0) scale(1);
+  }
+}
+.animate-neon-aura {
+  animation: neon-aura-drift 16s ease-in-out infinite;
+  will-change: transform;
+}
+.animation-delay-slow {
+  animation-delay: -6s;
+}
+
+/* Beam sweep: a light band travelling across a hero/panel on a loop. */
+@keyframes neon-beam-sweep {
+  0% {
+    transform: translateX(-130%) skewX(-18deg);
+  }
+  55%,
+  100% {
+    transform: translateX(230%) skewX(-18deg);
+  }
+}
+.animate-neon-beam {
+  animation: neon-beam-sweep 5.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  will-change: transform;
+}
+
+/* Grid floor: crisp hairline grid masked to a radial glow. */
+.neon-grid {
+  background-image:
+    linear-gradient(to right, var(--border) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--border) 1px, transparent 1px);
+  background-size: 3.5rem 3.5rem;
+}
+
+/* Dotted "circuit" mesh used behind terminal demos. */
+.neon-dots {
+  background-image: radial-gradient(
+    color-mix(in oklch, var(--primary) 40%, transparent) 1px,
+    transparent 1px
+  );
+  background-size: 22px 22px;
+}
+
+/* Soft radial "sun" used as a hero light source. */
+.bg-radial-glow {
+  background: radial-gradient(
+    ellipse 55% 50% at center,
+    color-mix(in oklch, var(--primary) 26%, transparent) 0%,
+    transparent 72%
+  );
+}
+
+/* Spotlight: mouse-tracked radial highlight (JS sets --spot-x/--spot-y). */
+.spotlight-card {
+  position: relative;
+}
+.spotlight-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    420px circle at var(--spot-x, 50%) var(--spot-y, 50%),
+    color-mix(in oklch, var(--primary) 18%, transparent),
+    transparent 70%
+  );
+  opacity: 0;
+  transition: opacity 180ms ease;
+  pointer-events: none;
+}
+.spotlight-card:hover::before {
+  opacity: 1;
+}
+
+/* Gradient ring: border that lights up on hover with the neon trio. */
+.neon-ring {
+  position: relative;
+}
+.neon-ring::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    120deg,
+    var(--primary),
+    var(--glow-cyan),
+    var(--glow-violet)
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 200ms ease;
+  pointer-events: none;
+}
+.neon-ring:hover::after {
+  opacity: 1;
+}
+
+/* Text glow helper (use with a gradient clip to get a neon headline). */
+.text-glow {
+  text-shadow:
+    0 0 18px color-mix(in oklch, var(--primary) 55%, transparent),
+    0 0 46px color-mix(in oklch, var(--glow-violet) 40%, transparent);
+}
+
+/* Drop-shadow glow for gradient-clipped text: filter respects the
+ * alpha silhouette, so the halo hugs the gradient glyphs instead of
+ * being clipped away by `bg-clip-text`. */
+.neon-text-drop {
+  filter: drop-shadow(0 0 14px color-mix(in oklch, var(--primary) 22%, transparent))
+    drop-shadow(0 0 40px color-mix(in oklch, var(--glow-violet) 16%, transparent));
+}
+
+/* Muted section-title gradient: a desaturated, calmer violet than the
+ * original bright violet → fuchsia neon, for light and dark themes. */
+.text-gradient-muted {
+  background-image: linear-gradient(
+    92deg,
+    color-mix(in oklch, var(--chart-3) 72%, var(--foreground)) 0%,
+    color-mix(in oklch, var(--chart-4) 62%, var(--foreground)) 48%,
+    color-mix(in oklch, var(--chart-3) 78%, var(--foreground)) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.dark .text-gradient-muted {
+  background-image: linear-gradient(
+    92deg,
+    color-mix(in oklch, var(--chart-3) 58%, var(--foreground)) 0%,
+    color-mix(in oklch, var(--chart-4) 50%, var(--foreground)) 48%,
+    color-mix(in oklch, var(--chart-3) 62%, var(--foreground)) 100%
+  );
+}
+
+/* Neon CTA button: glow grows on hover; top edge catches a travelling
+ * highlight. Paired with `.btn-neon-sheen` child for the sweep. */
+.btn-neon {
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--primary) 55%, transparent),
+    0 0 22px -6px color-mix(in oklch, var(--primary) 60%, transparent),
+    inset 0 0 14px -8px color-mix(in oklch, var(--primary) 80%, transparent);
+}
+.btn-neon:hover {
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--primary) 80%, transparent),
+    0 0 34px -4px color-mix(in oklch, var(--primary) 80%, transparent),
+    inset 0 0 18px -6px color-mix(in oklch, var(--primary) 90%, transparent);
+}
+
+/* Scanning line drifting down an element (terminal window). */
+@keyframes neon-scan {
+  0% {
+    top: -10%;
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  92% {
+    opacity: 1;
+  }
+  100% {
+    top: 110%;
+    opacity: 0;
+  }
+}
+.animate-neon-scan {
+  animation: neon-scan 3.6s ease-in-out infinite;
+  will-change: top, opacity;
+}
+
+/* Tiny floating particles (CSS-only: blurred dots rising in a loop). */
+@keyframes neon-float-particle {
+  0% {
+    transform: translate3d(0, 0, 0);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 0.4;
+  }
+  100% {
+    transform: translate3d(var(--particle-x, 20px), -90px, 0);
+    opacity: 0;
+  }
+}
+.animate-neon-particle {
+  animation: neon-float-particle var(--particle-dur, 9s) linear infinite;
+  animation-delay: var(--particle-delay, 0s);
+}
+
+/* Pulsing live dot. */
+@keyframes neon-ping-soft {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--primary) 55%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 8px transparent;
+  }
+}
+.animate-neon-ping {
+  animation: neon-ping-soft 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+/* A glowing dot travelling along a horizontal connector line. The parent
+ * should be a thin gradient track; the dot is positioned with `left`. */
+@keyframes neon-flow-dot-x {
+  0% {
+    left: 0%;
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  92% {
+    opacity: 1;
+  }
+  100% {
+    left: calc(100% - 4px);
+    opacity: 0;
+  }
+}
+.animate-neon-flow-dot {
+  animation: neon-flow-dot-x 2.6s ease-in-out infinite;
+}
+
+/* Connector line used between "how it works" steps. */
+.neon-connector {
+  background: linear-gradient(
+    to right,
+    transparent,
+    color-mix(in oklch, var(--primary) 45%, transparent),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    black 18%,
+    black 82%,
+    transparent
+  );
+}
+
+/* Shimmering conic border travelling around a rounded panel. Reuses the
+ * `auto-group-flow-border` pattern but driven by chart/primary hue. */
+@keyframes neon-border-spin {
+  to {
+    --auto-group-flow-angle: 360deg;
+  }
+}
+.neon-flow-border {
+  padding: 1.5px;
+  border-radius: inherit;
+  background: conic-gradient(
+    from var(--auto-group-flow-angle),
+    transparent 0deg,
+    transparent 200deg,
+    color-mix(in oklch, var(--glow-cyan) 55%, transparent) 280deg,
+    var(--primary) 330deg,
+    transparent 360deg
+  );
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: neon-border-spin 4s linear infinite;
+}
+
+/* Reduced motion: flatten all neon motion effects. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-neon-aura,
+  .animate-neon-beam,
+  .animate-neon-scan,
+  .animate-neon-particle,
+  .animate-neon-ping,
+  .neon-flow-border,
+  .auto-group-flow-border {
+    animation: none !important;
+  }
+  .animate-neon-aura {
+    transform: none !important;
+  }
+  .animate-neon-beam,
+  .animate-neon-scan {
+    opacity: 0 !important;
+  }
+  .neon-flow-border {
+    display: none;
+  }
+}
+
+/* ==========================================================================
+   Relay home — "Architecture" animated flow diagram
+   ========================================================================== */
+
+/* Static base curve under each animated flow line. */
+.relay-arch .arch-line-base {
+  stroke: color-mix(in oklch, var(--primary) 24%, transparent);
+  stroke-width: 1;
+  fill: none;
+}
+
+/* Animated energy line travelling downward (dashed flow). */
+.relay-arch .arch-line-flow {
+  fill: none;
+  stroke: color-mix(in oklch, var(--primary) 52%, transparent);
+  stroke-width: 1.4;
+  stroke-dasharray: 5 10;
+  animation: arch-flow-dash 1.1s linear infinite;
+}
+
+@keyframes arch-flow-dash {
+  to {
+    stroke-dashoffset: -15;
+  }
+}
+
+/* Return-trip energy line travelling back upward on the same curve. */
+.relay-arch .arch-line-flow-up {
+  fill: none;
+  stroke: color-mix(in oklch, var(--muted-foreground) 45%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 2 8;
+  animation: arch-flow-dash-up 1.1s linear infinite;
+}
+
+@keyframes arch-flow-dash-up {
+  to {
+    stroke-dashoffset: 15;
+  }
+}
+
+/* Signal dots travelling along each path. */
+.relay-arch .arch-dot {
+  animation: arch-dot-fade 2.6s ease-in-out infinite;
+}
+
+.relay-arch .arch-dot-up {
+  fill: color-mix(in oklch, var(--muted-foreground) 75%, transparent);
+  animation: arch-dot-fade 2.6s ease-in-out infinite;
+}
+
+@keyframes arch-dot-fade {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Node cards — glassy, theme-adaptive. */
+.relay-arch .arch-node-box {
+  fill: color-mix(in oklch, var(--background) 80%, transparent);
+  stroke: color-mix(in oklch, var(--primary) 26%, transparent);
+  stroke-width: 1;
+}
+
+.relay-arch .arch-node-box-dash {
+  stroke: color-mix(in oklch, var(--muted-foreground) 55%, transparent);
+  stroke-dasharray: 4 4;
+}
+
+.relay-arch .arch-more-label {
+  fill: color-mix(in oklch, var(--muted-foreground) 85%, transparent);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -0.1px;
+}
+
+.relay-arch .arch-node-label,
+.relay-arch .arch-app-label {
+  fill: color-mix(in oklch, var(--foreground) 82%, transparent);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -0.1px;
+}
+
+.relay-arch .arch-app-label {
+  font-size: 11px;
+}
+
+.relay-arch .arch-status {
+  fill: color-mix(in oklch, var(--primary) 75%, transparent);
+}
+
+/* Gateway hub — filled primary panel with pulsing inner glow. */
+.relay-arch .arch-gateway {
+  fill: color-mix(in oklch, var(--primary) 16%, var(--background));
+  stroke: color-mix(in oklch, var(--primary) 45%, transparent);
+  stroke-width: 1.2;
+  animation: arch-gateway-pulse 4s ease-in-out infinite;
+}
+
+@keyframes arch-gateway-pulse {
+  0%,
+  100% {
+    opacity: 0.85;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.relay-arch .arch-gateway-title {
+  fill: color-mix(in oklch, var(--primary) 92%, var(--foreground));
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+}
+
+.relay-arch .arch-gateway-sub {
+  fill: color-mix(in oklch, var(--muted-foreground) 90%, transparent);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+}
+
+/* Nodes ease in one by one (staggered via --arch-delay). */
+.relay-arch .arch-node {
+  animation: arch-node-enter 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: var(--arch-delay, 0ms);
+}
+
+@keyframes arch-node-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .relay-arch .arch-line-flow,
+  .relay-arch .arch-line-flow-up,
+  .relay-arch .arch-dot,
+  .relay-arch .arch-dot-up,
+  .relay-arch .arch-gateway,
+  .relay-arch .arch-node {
+    animation: none !important;
+  }
+  .relay-arch .arch-node {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  .relay-arch .arch-dot,
+  .relay-arch .arch-dot-up {
+    display: none;
+  }
+  .relay-arch .arch-line-flow-up {
+    display: none;
+  }
+}
+
+/* ==========================================================================
+   Relay home — Hero "capability network" diagram
+   ========================================================================== */
+
+.hero-net {
+  overflow: visible;
+  /* Calm, desaturated violet for the whole diagram (light + dark). */
+  --primary: oklch(0.55 0.09 296);
+  --glow-violet: oklch(0.55 0.09 296);
+}
+.dark .hero-net {
+  --primary: oklch(0.74 0.1 296);
+  --glow-violet: oklch(0.74 0.1 296);
+}
+
+/* faint ring the capability nodes revolve on */
+.hero-net .hero-net-orbit {
+  stroke: color-mix(in oklch, var(--primary) 26%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 3 7;
+  fill: none;
+}
+
+/* capability node disc */
+.hero-net .hero-net-cap-circle {
+  fill: color-mix(in oklch, var(--background) 85%, transparent);
+  stroke: color-mix(in oklch, var(--primary) 42%, transparent);
+  stroke-width: 1.2;
+}
+
+.hero-net .hero-net-cap {
+  animation: hero-net-fade 1s ease-out both;
+  animation-delay: var(--hero-net-delay, 0ms);
+}
+
+@keyframes hero-net-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.hero-net .hero-net-cap-label {
+  fill: color-mix(in oklch, var(--foreground) 78%, transparent);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+}
+
+/* tilted orbital tracks the electrons follow — clearly dashed */
+.hero-net .hero-net-track {
+  stroke: color-mix(in oklch, var(--primary) 42%, transparent);
+  stroke-width: 1.3;
+  stroke-dasharray: 7 9;
+  fill: none;
+  animation: hero-net-dash-flow 2.4s linear infinite;
+}
+
+@keyframes hero-net-dash-flow {
+  to {
+    stroke-dashoffset: -16;
+  }
+}
+
+/* outer electron chips (model / app) */
+.hero-net .hero-net-electron {
+  animation: hero-net-fade 0.8s ease-out both;
+}
+
+@keyframes hero-net-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.hero-net .hero-net-chip-ring {
+  fill: color-mix(in oklch, var(--background) 90%, transparent);
+  stroke: color-mix(in oklch, var(--muted-foreground) 40%, transparent);
+  stroke-width: 1;
+}
+
+.hero-net .hero-net-chip-app {
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.hero-net .hero-net-chip-label {
+  fill: color-mix(in oklch, var(--muted-foreground) 90%, transparent);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: -0.2px;
+}
+
+/* center hub */
+.hero-net .hero-net-hub {
+  animation: hero-net-pop 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: 60ms;
+}
+
+.hero-net .hero-net-hub-ring {
+  fill: color-mix(in oklch, var(--primary) 14%, var(--background));
+  stroke: color-mix(in oklch, var(--primary) 55%, transparent);
+  stroke-width: 1.4;
+}
+
+.hero-net .hero-net-hub-core {
+  fill: color-mix(in oklch, var(--primary) 26%, var(--background));
+  stroke: none;
+  animation: hero-net-breathe 3.2s ease-in-out infinite;
+}
+
+@keyframes hero-net-breathe {
+  0%,
+  100% {
+    opacity: 0.75;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.hero-net .hero-net-flow-track {
+  stroke: color-mix(in oklch, var(--primary) 30%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+  fill: none;
+}
+
+.hero-net .hero-net-flow-dot {
+  fill: color-mix(in oklch, var(--primary) 90%, var(--foreground));
+}
+
+.hero-net .hero-net-flow-ring-a {
+  transform-origin: 300px 300px;
+  animation: hero-net-spin 7s linear infinite;
+}
+
+.hero-net .hero-net-flow-ring-b {
+  transform-origin: 300px 300px;
+  animation: hero-net-spin-rev 9s linear infinite;
+}
+
+@keyframes hero-net-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes hero-net-spin-rev {
+  to {
+    transform: rotate(-360deg);
+  }
+}
+
+.hero-net .hero-net-hub-title {
+  fill: color-mix(in oklch, var(--primary) 90%, var(--foreground));
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 2px;
+}
+
+.hero-net .hero-net-hub-sub {
+  fill: color-mix(in oklch, var(--muted-foreground) 85%, transparent);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 7.5px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-net .hero-net-flow-ring-a,
+  .hero-net .hero-net-flow-ring-b,
+  .hero-net .hero-net-hub-core,
+  .hero-net .hero-net-cap,
+  .hero-net .hero-net-electron,
+  .hero-net .hero-net-hub,
+  .hero-net .hero-net-track {
+    animation: none !important;
+  }
+  .hero-net .hero-net-cap,
+  .hero-net .hero-net-electron,
+  .hero-net .hero-net-hub {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}
+
+

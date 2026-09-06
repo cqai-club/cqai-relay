@@ -14,12 +14,46 @@
       content="Unified AI API gateway and admin dashboard."
     />
 
-    <meta name="theme-color" content="#fff" />
+    <!-- "Neon circuit" deep-space canvas for browser UI surfaces -->
+    <meta name="theme-color" content="#0e0a1c" />
+
+    <!-- Paint the resolved theme before first render so there is no light
+         flash: read the same cookie key the ThemeProvider uses, then fall
+         back to dark (the flagship presentation). The provider re-applies
+         the authoritative theme once React mounts. -->
+    <script>
+      ;(function () {
+        try {
+          var match = document.cookie.match(
+            /(?:^|;\s*)vite-ui-theme=([^;]+)/
+          )
+          var theme = match ? decodeURIComponent(match[1]) : ''
+          if (theme === 'light') {
+            document.documentElement.classList.add('light')
+          } else if (theme === 'dark') {
+            document.documentElement.classList.add('dark')
+          } else if (
+            theme === 'system' &&
+            window.matchMedia &&
+            window.matchMedia('(prefers-color-scheme: dark)').matches
+          ) {
+            document.documentElement.classList.add('dark')
+          } else if (theme === 'system') {
+            document.documentElement.classList.add('light')
+          } else {
+            // No stored preference → dark-first identity.
+            document.documentElement.classList.add('dark')
+          }
+        } catch (error) {
+          document.documentElement.classList.add('dark')
+        }
+      })()
+    </script>
     <!--umami-->
     <!--Google Analytics-->
   </head>
 
   <body>
-    <div id="root" translate="no" class="notranslate"></div>
+    <div id="root" translate="no" class="notranslate" data-theme-scale="xl"></div>  
   </body>
 </html>
