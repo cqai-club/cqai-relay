@@ -1,8 +1,8 @@
-# Relay 前端接入 Logto 传统 Web 应用（统一登录 + 按角色展示页面）
+# Relay 前端接入 Logto 传统 Web 应用（管理面登录 + 业务 AI 桥接）
 
-> 目标：把 CQAI Relay（NewAPI 前端）从「原生 OIDC」切换到「Logto 传统 Web 应用」。
-> 登录、注册、权限都由 Logto + Account Service 桥接承担；relay 前端按 Logto 返回的
-> scope（`account:admin` / `account:root`）映射到 NewAPI 角色并据此展示页面。
+> 目标：让 Relay 管理面可以使用 Logto 传统 Web 登录；业务应用的 AI 调用统一走
+> `Logto -> cqai-account-service -> Relay`。Relay 原生 OIDC 不在本次改造中删除，
+> 只作为管理面/兼容入口保留。
 >
 > 现状：relay 后端已实现 Logto 传统应用所需的全部能力（服务端换 token 的
 > `oauth/oidc.go`、建号/绑定 `controller/oauth.go`、`/api/internal/provision`、
@@ -175,10 +175,10 @@ cd cqai-relay/web && bun install && bun run build
 
 ---
 
-## 3. 前端 → Account Service 调用（可选，第二阶段）
+## 3. 业务应用 → Account Service 调用（统一业务链路）
 
-如果 relay 前端还需要拿 `GET /api/account`（用户 quota）或代理 `/v1/*`，
-复用 `cqai-account-service` 已提供的两个能力，不重复造：
+业务应用需要拿 `GET /api/account`（用户 quota）或代理 `/v1/*` 时，
+必须复用 `cqai-account-service` 已提供的两个能力，不直接把 Relay Key 暴露给浏览器：
 
 - `GET /api/account`：带 `Authorization: Bearer <Logto access token>`，
   Account Service 在服务端用它换 NewAPI 应用 Key 并返回 `{userId, platform, quota, quotaUsed}`。
@@ -187,8 +187,9 @@ cd cqai-relay/web && bun install && bun run build
   `Authorization: Bearer`；CORS 白名单在 Account Service 的
   `CORS_ALLOWED_ORIGINS`（本地联调需含 `http://localhost:3001`）。
 
-> 注意：`/api/account` 不是登录接口，不建会话。登录态仍由 relay 自己的
-> `setupLogin`（cookie/session）维护。
+> 注意：`/api/account` 不是登录接口，不建 Relay 会话。Relay 管理后台仍可由自己的
+> `setupLogin`（cookie/session）维护；业务 AI 权限由 Logto Access Token 和
+> Account Service 校验。
 
 ---
 
