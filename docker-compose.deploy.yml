@@ -25,7 +25,10 @@ services:
       CRYPTO_SECRET: ${CRYPTO_SECRET}
       NEW_API_INTERNAL_TOKEN: ${NEW_API_INTERNAL_TOKEN}
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
-      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-none}
+      # Leave blank by default so the application uses its safe compatibility
+      # defaults for loopback and private reverse-proxy networks. Set an
+      # explicit list when the deployment topology is known.
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
     depends_on:
       postgres:
         condition: service_healthy
