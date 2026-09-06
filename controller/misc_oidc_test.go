@@ -58,3 +58,37 @@ func TestGetStatusReturnsEffectiveOIDCDisplayName(t *testing.T) {
 		})
 	}
 }
+
+func TestGetStatusExposesOIDCFlowSettings(t *testing.T) {
+	settings := system_setting.GetOIDCSettings()
+	originalRedirectURI := settings.RedirectURI
+	originalResource := settings.Resource
+	originalScope := settings.Scope
+	originalOptionMap := common.OptionMap
+	t.Cleanup(func() {
+		settings.RedirectURI = originalRedirectURI
+		settings.Resource = originalResource
+		settings.Scope = originalScope
+		common.OptionMap = originalOptionMap
+	})
+	settings.RedirectURI = "https://relay.example.com/oauth/oidc"
+	settings.Resource = "https://account.example.com"
+	settings.Scope = "openid profile email account:admin account:root"
+	common.OptionMap = map[string]string{}
+
+	response := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(response)
+	context.Request = httptest.NewRequest(http.MethodGet, "/api/status", nil)
+
+	GetStatus(context)
+
+	var payload struct {
+		Success bool           `json:"success"`
+		Data    map[string]any `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(response.Body.Bytes(), &payload))
+	require.True(t, payload.Success)
+	assert.Equal(t, settings.RedirectURI, payload.Data["oidc_redirect_uri"])
+	assert.Equal(t, settings.Resource, payload.Data["oidc_resource"])
+	assert.Equal(t, settings.Scope, payload.Data["oidc_scope"])
+}

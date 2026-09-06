@@ -105,6 +105,9 @@ export interface SystemStatus {
     oidc_authorization_endpoint?: string
     oidc_client_id?: string
     oidc_display_name?: string
+    oidc_redirect_uri?: string
+    oidc_resource?: string
+    oidc_scope?: string
     linuxdo_oauth?: boolean
     linuxdo_client_id?: string
     telegram_oauth?: boolean
@@ -151,6 +154,9 @@ export interface SystemStatus {
   oidc_authorization_endpoint?: string
   oidc_client_id?: string
   oidc_display_name?: string
+  oidc_redirect_uri?: string
+  oidc_resource?: string
+  oidc_scope?: string
   linuxdo_oauth?: boolean
   linuxdo_client_id?: string
   telegram_oauth?: boolean

@@ -325,8 +325,22 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 		}
 	}
 
-	// User doesn't exist, create new user if registration is enabled
-	if !common.RegisterEnabled {
+	role := common.RoleCommonUser
+	if oauthUser.Extra != nil {
+		if oauthRole, ok := oauthUser.Extra["role"].(int); ok {
+			switch oauthRole {
+			case common.RoleAdminUser, common.RoleRootUser:
+				role = oauthRole
+			}
+		}
+	}
+
+	// A trusted OIDC provider is the registration authority for its users. Keep
+	// local registration disabled for username/password and other OAuth
+	// providers, but allow any successfully authenticated Logto user to create
+	// the local Relay mirror account. The mapped role still controls access.
+	_, isOIDCProvider := provider.(*oauth.OIDCProvider)
+	if !common.RegisterEnabled && !isOIDCProvider {
 		return nil, &OAuthRegistrationDisabledError{}
 	}
 
@@ -358,7 +372,7 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 			return nil, err
 		}
 	}
-	user.Role = common.RoleCommonUser
+	user.Role = role
 	user.Status = common.UserStatusEnabled
 
 	// Handle affiliate code

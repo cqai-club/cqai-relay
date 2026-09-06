@@ -86,7 +86,7 @@ function RootComponent() {
 
         if (currentSID && event.sid === currentSID) {
           clearAuthenticatedClientState(queryClient, false)
-          void navigate({ to: '/sign-in', replace: true })
+          void navigate({ to: '/', replace: true })
         }
       }),
     [navigate, queryClient]

@@ -2,6 +2,7 @@ package model
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -58,6 +59,7 @@ type AccountProvisionInput struct {
 	DisplayName string
 	Email       string
 	Role        int
+	SyncProfile bool
 	TokenKey    string
 	TokenQuota  int
 }
@@ -83,27 +85,64 @@ func ProvisionExternalAccount(input AccountProvisionInput) (*AccountProvisionRes
 			if identity.Issuer != input.Issuer || identity.Subject != input.Subject {
 				return ErrExternalAccountCollision
 			}
-		case errors.Is(err, gorm.ErrRecordNotFound):
-			user := User{
-				Username:    input.Username,
-				Password:    input.Password,
-				DisplayName: input.DisplayName,
-				Email:       input.Email,
-				Role:        input.Role,
-				Status:      common.UserStatusEnabled,
-				Group:       "default",
-			}
-			if user.Email != "" {
-				available, checkErr := IsEmailAvailableWithTx(tx, user.Email, 0)
-				if checkErr != nil {
-					return checkErr
-				}
-				if !available {
-					user.Email = ""
-				}
-			}
-			if err := user.InsertWithTx(tx, 0); err != nil {
+			user := User{}
+			if err := tx.Unscoped().First(&user, identity.UserId).Error; err != nil {
 				return err
+			}
+			if user.DeletedAt.Valid || user.Status != common.UserStatusEnabled {
+				return ErrExternalAccountDisabled
+			}
+			if input.SyncProfile {
+				if err := syncExternalAccountProfile(tx, &user, input); err != nil {
+					return err
+				}
+			}
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			// Relay's native OIDC flow stores the Logto user ID in users.oidc_id.
+			// Reuse that local user when the Account Service is the first path
+			// reaching provisioning, instead of creating an acct_* duplicate.
+			user := User{}
+			userCreated := false
+			existingErr := tx.Where("oidc_id = ?", input.Subject).First(&user).Error
+			switch {
+			case existingErr == nil:
+				if user.DeletedAt.Valid || user.Status != common.UserStatusEnabled {
+					return ErrExternalAccountDisabled
+				}
+			case !errors.Is(existingErr, gorm.ErrRecordNotFound):
+				return existingErr
+			default:
+				username := input.Username
+				var existingUsername User
+				usernameErr := tx.Unscoped().Select("id").Where("username = ?", username).First(&existingUsername).Error
+				if usernameErr == nil {
+					username = "acct_" + input.IdentityKey[:15]
+				} else if !errors.Is(usernameErr, gorm.ErrRecordNotFound) {
+					return usernameErr
+				}
+				user = User{
+					Username:    username,
+					Password:    input.Password,
+					DisplayName: input.DisplayName,
+					Email:       input.Email,
+					OidcId:      input.Subject,
+					Role:        input.Role,
+					Status:      common.UserStatusEnabled,
+					Group:       "default",
+				}
+				if user.Email != "" {
+					available, checkErr := IsEmailAvailableWithTx(tx, user.Email, 0)
+					if checkErr != nil {
+						return checkErr
+					}
+					if !available {
+						user.Email = ""
+					}
+				}
+				if err := user.InsertWithTx(tx, 0); err != nil {
+					return err
+				}
+				userCreated = true
 			}
 			identity = ExternalAccountIdentity{
 				IdentityKey: input.IdentityKey,
@@ -119,7 +158,7 @@ func ProvisionExternalAccount(input AccountProvisionInput) (*AccountProvisionRes
 				return ErrAccountProvisionConflict
 			}
 			result.User = user
-			result.UserCreated = true
+			result.UserCreated = userCreated
 		default:
 			return err
 		}
@@ -189,6 +228,40 @@ func ProvisionExternalAccount(input AccountProvisionInput) (*AccountProvisionRes
 		return nil, err
 	}
 	return result, nil
+}
+
+func syncExternalAccountProfile(tx *gorm.DB, user *User, input AccountProvisionInput) error {
+	username := strings.TrimSpace(input.Username)
+	displayName := strings.TrimSpace(input.DisplayName)
+	updates := map[string]interface{}{}
+	if username != "" && username != user.Username {
+		var existing User
+		err := tx.Unscoped().Select("id").Where("username = ? AND id <> ?", username, user.Id).First(&existing).Error
+		switch {
+		case err == nil:
+			// Keep the existing fallback username when the profile name collides.
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			updates["username"] = username
+		default:
+			return err
+		}
+	}
+	if displayName != "" && displayName != user.DisplayName {
+		updates["display_name"] = displayName
+	}
+	if len(updates) == 0 {
+		return nil
+	}
+	if err := tx.Model(user).Updates(updates).Error; err != nil {
+		return err
+	}
+	if value, ok := updates["username"].(string); ok {
+		user.Username = value
+	}
+	if value, ok := updates["display_name"].(string); ok {
+		user.DisplayName = value
+	}
+	return nil
 }
 
 func loadProvisionedExternalAccount(input AccountProvisionInput) (*AccountProvisionResult, error) {

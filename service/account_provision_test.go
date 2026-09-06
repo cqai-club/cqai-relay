@@ -95,6 +95,117 @@ func TestProvisionAccountIsIdempotentPerIdentityAndPlatform(t *testing.T) {
 	}
 }
 
+func TestProvisionAccountReusesExistingOIDCUser(t *testing.T) {
+	db := setupAccountProvisionTestDB(t)
+	existing := model.User{
+		Username: "gdxw",
+		Password: "password",
+		OidcId:   "logto-existing-user",
+		Status:   common.UserStatusEnabled,
+		Role:     common.RoleCommonUser,
+		Group:    "default",
+	}
+	require.NoError(t, db.Create(&existing).Error)
+
+	result, err := ProvisionAccount(AccountProvisionRequest{
+		Issuer:   "https://auth.example.test/oidc",
+		Subject:  existing.OidcId,
+		Platform: "lingweave",
+	})
+	require.NoError(t, err)
+
+	assert.False(t, result.UserCreated)
+	assert.True(t, result.KeyCreated)
+	assert.Equal(t, existing.Id, result.UserId)
+
+	var identity model.ExternalAccountIdentity
+	require.NoError(t, db.Where("subject = ?", existing.OidcId).First(&identity).Error)
+	assert.Equal(t, existing.Id, identity.UserId)
+
+	var token model.Token
+	require.NoError(t, db.First(&token, result.TokenId).Error)
+	assert.Equal(t, existing.Id, token.UserId)
+}
+
+func TestProvisionAccountUsesLogtoUsernameAndName(t *testing.T) {
+	db := setupAccountProvisionTestDB(t)
+	result, err := ProvisionAccount(AccountProvisionRequest{
+		Issuer:   "https://auth.example.test/oidc",
+		Subject:  "logto-profile-user",
+		Platform: "lingweave",
+		Username: "logto-user",
+		Name:     "Logto Display Name",
+	})
+	require.NoError(t, err)
+
+	var user model.User
+	require.NoError(t, db.First(&user, result.UserId).Error)
+	assert.Equal(t, "logto-user", user.Username)
+	assert.Equal(t, "Logto Display Name", user.DisplayName)
+}
+
+func TestProvisionAccountFallsBackToLogtoUsernameForDisplayName(t *testing.T) {
+	db := setupAccountProvisionTestDB(t)
+	result, err := ProvisionAccount(AccountProvisionRequest{
+		Issuer:   "https://auth.example.test/oidc",
+		Subject:  "logto-profile-user-without-name",
+		Platform: "lingweave",
+		Username: "logto-user",
+	})
+	require.NoError(t, err)
+
+	var user model.User
+	require.NoError(t, db.First(&user, result.UserId).Error)
+	assert.Equal(t, "logto-user", user.Username)
+	assert.Equal(t, "logto-user", user.DisplayName)
+}
+
+func TestProvisionAccountSyncsProfileOnlyWhenRequested(t *testing.T) {
+	db := setupAccountProvisionTestDB(t)
+	first, err := ProvisionAccount(AccountProvisionRequest{
+		Issuer:   "https://auth.example.test/oidc",
+		Subject:  "profile-sync-user",
+		Platform: "lingweave",
+	})
+	require.NoError(t, err)
+	require.True(t, first.UserCreated)
+
+	second, err := ProvisionAccount(AccountProvisionRequest{
+		Issuer:      "https://auth.example.test/oidc",
+		Subject:     "profile-sync-user",
+		Platform:    "lingweave",
+		Username:    "profile-user",
+		Name:        "Profile User",
+		SyncProfile: true,
+		Role:        common.RoleRootUser,
+	})
+	require.NoError(t, err)
+	assert.False(t, second.UserCreated)
+	assert.Equal(t, first.UserId, second.UserId)
+
+	var user model.User
+	require.NoError(t, db.First(&user, first.UserId).Error)
+	assert.Equal(t, "profile-user", user.Username)
+	assert.Equal(t, "Profile User", user.DisplayName)
+	assert.Equal(t, common.RoleCommonUser, user.Role)
+	assert.Equal(t, "profile-sync-user", user.OidcId)
+}
+
+func TestProvisionAccountPersistsOIDCUserIDForFutureNativeLogin(t *testing.T) {
+	db := setupAccountProvisionTestDB(t)
+	result, err := ProvisionAccount(AccountProvisionRequest{
+		Issuer:   "https://auth.example.test/oidc",
+		Subject:  "logto-new-user",
+		Platform: "lingweave",
+	})
+	require.NoError(t, err)
+	assert.True(t, result.UserCreated)
+
+	var user model.User
+	require.NoError(t, db.First(&user, result.UserId).Error)
+	assert.Equal(t, "logto-new-user", user.OidcId)
+}
+
 func TestProvisionAccountHandlesConcurrentFirstRequests(t *testing.T) {
 	db := setupAccountProvisionTestDB(t)
 	request := AccountProvisionRequest{

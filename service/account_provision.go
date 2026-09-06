@@ -27,11 +27,13 @@ type AccountProvisionRequest struct {
 	Subject  string `json:"subject"`
 	Platform string `json:"platform"`
 	Email    string `json:"email"`
+	Username string `json:"username"`
 	Name     string `json:"name"`
 	// Optional NewAPI numeric role supplied by the trusted bridge
 	// (Account Service). Only 1 (common), 10 (admin), and 100 (root) are
 	// accepted on first creation; existing users are never re-role'd.
-	Role int `json:"role"`
+	Role        int  `json:"role"`
+	SyncProfile bool `json:"sync_profile"`
 }
 
 type AccountProvisionResponse struct {
@@ -77,7 +79,16 @@ func ProvisionAccount(request AccountProvisionRequest) (*AccountProvisionRespons
 			return nil, fmt.Errorf("%w: email is invalid or exceeds 50 characters", ErrInvalidAccountProvisionRequest)
 		}
 	}
+	identityDigest := sha256.Sum256([]byte(issuer + "\x00" + subject))
+	fallbackUsername := "acct_" + fmt.Sprintf("%x", identityDigest)[:15]
+	username := strings.TrimSpace(request.Username)
+	if username == "" || utf8.RuneCountInString(username) > model.UserNameMaxLength {
+		username = fallbackUsername
+	}
 	displayName := strings.TrimSpace(request.Name)
+	if displayName == "" {
+		displayName = username
+	}
 	if runes := []rune(displayName); len(runes) > 20 {
 		displayName = string(runes[:20])
 	}
@@ -86,7 +97,6 @@ func ProvisionAccount(request AccountProvisionRequest) (*AccountProvisionRespons
 	}
 	role := normalizeRole(request.Role)
 
-	identityDigest := sha256.Sum256([]byte(issuer + "\x00" + subject))
 	identityKey := fmt.Sprintf("%x", identityDigest)
 	password, err := common.GenerateRandomCharsKey(20)
 	if err != nil {
@@ -101,11 +111,12 @@ func ProvisionAccount(request AccountProvisionRequest) (*AccountProvisionRespons
 		Issuer:      issuer,
 		Subject:     subject,
 		Platform:    platform,
-		Username:    "acct_" + identityKey[:15],
+		Username:    username,
 		Password:    password,
 		DisplayName: displayName,
 		Email:       email,
 		Role:        role,
+		SyncProfile: request.SyncProfile,
 		TokenKey:    tokenKey,
 		// Keep the per-key quota aligned with NewAPI's configured initial user
 		// quota. Never use MaxWalletQuota here: it is a wallet safety boundary,

@@ -49,18 +49,18 @@ function OAuthComponent() {
             return
           }
           if (getServerErrorMessageKey(res)) {
-            navigate({ to: '/sign-in', replace: true })
+            navigate({ to: '/', replace: true })
             return
           }
         }
       } catch (error: unknown) {
         if (getServerErrorMessageKey(error)) {
-          navigate({ to: '/sign-in', replace: true })
+          navigate({ to: '/', replace: true })
           return
         }
       }
       toast.error(i18next.t('OAuth failed'))
-      navigate({ to: '/sign-in', replace: true })
+      navigate({ to: '/', replace: true })
     })()
   }, [navigate, search])
 

@@ -162,6 +162,11 @@ export type AuthSettings = {
   'oidc.authorization_endpoint': string
   'oidc.token_endpoint': string
   'oidc.user_info_endpoint': string
+  'oidc.redirect_uri': string
+  'oidc.resource': string
+  'oidc.scope': string
+  'oidc.admin_scope': string
+  'oidc.root_scope': string
   TelegramOAuthEnabled: boolean
   TelegramBotToken: string
   TelegramBotName: string
