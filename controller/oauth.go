@@ -302,6 +302,14 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 		if user.Id == 0 {
 			return nil, &OAuthUserDeletedError{}
 		}
+		if _, isOIDCProvider := provider.(*oauth.OIDCProvider); isOIDCProvider {
+			if role, ok := oauthUser.Extra["role"].(int); ok && role != user.Role {
+				user.Role = role
+				if err := user.Update(false); err != nil {
+					return nil, err
+				}
+			}
+		}
 		return user, nil
 	}
 

@@ -10,6 +10,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/system_setting"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -62,6 +63,27 @@ func TestOIDCRoleFromTokenPrefersExchangeMetadata(t *testing.T) {
 	}
 
 	require.Equal(t, common.RoleRootUser, roleFromToken(token, settings))
+}
+
+func TestOIDCUserFromIDTokenUsesIdentityAndTokenRole(t *testing.T) {
+	settings := &system_setting.OIDCSettings{
+		AdminScope: "account:admin",
+		RootScope:  "account:root",
+	}
+	claims := jwt.MapClaims{
+		"sub":                "logto-sub",
+		"preferred_username": "alice",
+		"name":               "Alice",
+		"email":              "alice@example.com",
+	}
+
+	user, err := oidcUserFromIDToken(claims, &OAuthToken{Extra: map[string]any{"role": common.RoleRootUser}}, settings)
+	require.NoError(t, err)
+	assert.Equal(t, "logto-sub", user.ProviderUserID)
+	assert.Equal(t, "alice", user.Username)
+	assert.Equal(t, "Alice", user.DisplayName)
+	assert.Equal(t, "alice@example.com", user.Email)
+	assert.Equal(t, common.RoleRootUser, user.Extra["role"])
 }
 
 func TestOIDCExchangeTokenUsesConfiguredRedirectAndScope(t *testing.T) {
