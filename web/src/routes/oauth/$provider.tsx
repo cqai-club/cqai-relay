@@ -24,7 +24,7 @@ import {
 } from '@tanstack/react-router'
 import type { AxiosRequestConfig } from 'axios'
 import i18next from 'i18next'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { toast } from 'sonner'
 
 import { OAuthCallbackScreen } from '@/features/auth/components/oauth-callback-screen'
@@ -59,6 +59,7 @@ interface OAuthBindingResult {
 
 function OAuthCallback() {
   const navigate = useNavigate()
+  const handledCallbackRef = useRef<string | null>(null)
   const { provider } = useParams({ from: '/oauth/$provider' }) as {
     provider: string
   }
@@ -91,6 +92,20 @@ function OAuthCallback() {
 
     const code = search.code ?? ''
     const state = callbackState
+    const callbackKey = [
+      provider,
+      mode,
+      code,
+      state,
+      search.error ?? '',
+      search.error_description ?? '',
+      search.telegram_bind ?? '',
+      search.flow_token ?? '',
+      search.error_code ?? '',
+    ].join('|')
+    if (handledCallbackRef.current === callbackKey) return
+    handledCallbackRef.current = callbackKey
+
     const telegramCallback =
       provider === 'telegram'
         ? parseTelegramBindCallback({
@@ -182,7 +197,7 @@ function OAuthCallback() {
 
     if (!code && !search.error) {
       toast.error(i18next.t('Missing code'))
-      safeNavigate('/sign-in', '/sign-in')
+      safeNavigate('/', '/')
       return
     }
 
@@ -224,7 +239,7 @@ function OAuthCallback() {
           )
         }
       }
-      safeNavigate('/sign-in', '/sign-in')
+      safeNavigate('/', '/')
     })()
   }, [
     callbackState,

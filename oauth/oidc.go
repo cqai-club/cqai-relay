@@ -2,13 +2,13 @@ package oauth
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
@@ -36,6 +36,7 @@ type oidcUser struct {
 	OpenID            string `json:"sub"`
 	Email             string `json:"email"`
 	Name              string `json:"name"`
+	Username          string `json:"username"`
 	PreferredUsername string `json:"preferred_username"`
 	Picture           string `json:"picture"`
 }
@@ -56,13 +57,21 @@ func (p *OIDCProvider) ExchangeToken(ctx context.Context, code string, c *gin.Co
 	logger.LogDebug(ctx, "[OAuth-OIDC] ExchangeToken: code=%s...", code[:min(len(code), 10)])
 
 	settings := system_setting.GetOIDCSettings()
-	redirectUri := fmt.Sprintf("%s/oauth/oidc", system_setting.ServerAddress)
+	redirectUri := strings.TrimSpace(settings.RedirectURI)
+	if redirectUri == "" {
+		redirectUri = fmt.Sprintf("%s/oauth/oidc", strings.TrimRight(strings.TrimSpace(system_setting.ServerAddress), "/"))
+	}
+	scope := settings.GetEffectiveScope()
 	values := url.Values{}
 	values.Set("client_id", settings.ClientId)
 	values.Set("client_secret", settings.ClientSecret)
 	values.Set("code", code)
 	values.Set("grant_type", "authorization_code")
 	values.Set("redirect_uri", redirectUri)
+	if resource := strings.TrimSpace(settings.Resource); resource != "" {
+		values.Set("resource", resource)
+	}
+	values.Set("scope", scope)
 
 	logger.LogDebug(ctx, "[OAuth-OIDC] ExchangeToken: token_endpoint=%s, redirect_uri=%s", settings.TokenEndpoint, redirectUri)
 
@@ -86,7 +95,7 @@ func (p *OIDCProvider) ExchangeToken(ctx context.Context, code string, c *gin.Co
 	logger.LogDebug(ctx, "[OAuth-OIDC] ExchangeToken response status: %d", res.StatusCode)
 
 	var oidcResponse oidcOAuthResponse
-	err = json.NewDecoder(res.Body).Decode(&oidcResponse)
+	err = common.DecodeJson(res.Body, &oidcResponse)
 	if err != nil {
 		logger.LogError(ctx, fmt.Sprintf("[OAuth-OIDC] ExchangeToken decode error: %s", err.Error()))
 		return nil, err
@@ -96,7 +105,6 @@ func (p *OIDCProvider) ExchangeToken(ctx context.Context, code string, c *gin.Co
 		logger.LogError(ctx, "[OAuth-OIDC] ExchangeToken failed: empty access token")
 		return nil, NewOAuthError(i18n.MsgOAuthTokenFailed, map[string]any{"Provider": "OIDC"})
 	}
-
 	logger.LogDebug(ctx, "[OAuth-OIDC] ExchangeToken success: scope=%s", oidcResponse.Scope)
 
 	return &OAuthToken{
@@ -106,6 +114,9 @@ func (p *OIDCProvider) ExchangeToken(ctx context.Context, code string, c *gin.Co
 		ExpiresIn:    oidcResponse.ExpiresIn,
 		Scope:        oidcResponse.Scope,
 		IDToken:      oidcResponse.IDToken,
+		Extra: map[string]any{
+			"role": roleFromScope(oidcResponse.Scope, settings),
+		},
 	}, nil
 }
 
@@ -138,7 +149,7 @@ func (p *OIDCProvider) GetUserInfo(ctx context.Context, token *OAuthToken) (*OAu
 	}
 
 	var oidcUser oidcUser
-	err = json.NewDecoder(res.Body).Decode(&oidcUser)
+	err = common.DecodeJson(res.Body, &oidcUser)
 	if err != nil {
 		logger.LogError(ctx, fmt.Sprintf("[OAuth-OIDC] GetUserInfo decode error: %s", err.Error()))
 		return nil, err
@@ -149,14 +160,47 @@ func (p *OIDCProvider) GetUserInfo(ctx context.Context, token *OAuthToken) (*OAu
 		return nil, NewOAuthError(i18n.MsgOAuthUserInfoEmpty, map[string]any{"Provider": "OIDC"})
 	}
 
-	logger.LogDebug(ctx, "[OAuth-OIDC] GetUserInfo success: sub=%s, username=%s, name=%s, email=%s", oidcUser.OpenID, oidcUser.PreferredUsername, oidcUser.Name, oidcUser.Email)
+	username := oidcUser.PreferredUsername
+	if username == "" {
+		username = oidcUser.Username
+	}
+	role := roleFromToken(token, settings)
+	logger.LogDebug(ctx, "[OAuth-OIDC] GetUserInfo success: sub=%s, username=%s, name=%s, email=%s, role=%d", oidcUser.OpenID, username, oidcUser.Name, oidcUser.Email, role)
 
 	return &OAuthUser{
 		ProviderUserID: oidcUser.OpenID,
-		Username:       oidcUser.PreferredUsername,
+		Username:       username,
 		DisplayName:    oidcUser.Name,
 		Email:          oidcUser.Email,
+		Extra: map[string]any{
+			"role": role,
+		},
 	}, nil
+}
+
+func roleFromToken(token *OAuthToken, settings *system_setting.OIDCSettings) int {
+	if token != nil && token.Extra != nil {
+		if role, ok := token.Extra["role"].(int); ok {
+			return role
+		}
+	}
+	if token == nil {
+		return roleFromScope("", settings)
+	}
+	return roleFromScope(token.Scope, settings)
+}
+
+func roleFromScope(scope string, settings *system_setting.OIDCSettings) int {
+	role := common.RoleCommonUser
+	for _, value := range strings.Fields(scope) {
+		if value == strings.TrimSpace(settings.AdminScope) {
+			role = common.RoleAdminUser
+		}
+		if value == strings.TrimSpace(settings.RootScope) {
+			return common.RoleRootUser
+		}
+	}
+	return role
 }
 
 func (p *OIDCProvider) IsUserIDTaken(providerUserID string) bool {

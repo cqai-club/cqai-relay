@@ -37,6 +37,9 @@ const STATUS_RELATED_KEYS = new Set([
   'general_setting.custom_currency_symbol',
   'general_setting.custom_currency_exchange_rate',
   'oidc.display_name',
+  'oidc.redirect_uri',
+  'oidc.resource',
+  'oidc.scope',
 ])
 
 export function useUpdateOption() {

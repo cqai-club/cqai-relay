@@ -79,6 +79,11 @@ const oauthSchema = z.object({
     authorization_endpoint: z.string(),
     token_endpoint: z.string(),
     user_info_endpoint: z.string(),
+    redirect_uri: z.string(),
+    resource: z.string(),
+    scope: z.string(),
+    admin_scope: z.string(),
+    root_scope: z.string(),
   }),
   TelegramOAuthEnabled: z.boolean(),
   TelegramBotToken: z.string(),
@@ -110,6 +115,11 @@ type FlatOAuthDefaults = {
   'oidc.authorization_endpoint': string
   'oidc.token_endpoint': string
   'oidc.user_info_endpoint': string
+  'oidc.redirect_uri': string
+  'oidc.resource': string
+  'oidc.scope': string
+  'oidc.admin_scope': string
+  'oidc.root_scope': string
   TelegramOAuthEnabled: boolean
   TelegramBotToken: string
   TelegramBotName: string
@@ -193,6 +203,11 @@ const buildFormDefaults = (defaults: FlatOAuthDefaults): OAuthFormValues => ({
     authorization_endpoint: defaults['oidc.authorization_endpoint'] ?? '',
     token_endpoint: defaults['oidc.token_endpoint'] ?? '',
     user_info_endpoint: defaults['oidc.user_info_endpoint'] ?? '',
+    redirect_uri: defaults['oidc.redirect_uri'] ?? '',
+    resource: defaults['oidc.resource'] ?? '',
+    scope: defaults['oidc.scope'] ?? 'openid profile email',
+    admin_scope: defaults['oidc.admin_scope'] ?? 'account:admin',
+    root_scope: defaults['oidc.root_scope'] ?? 'account:root',
   },
   TelegramOAuthEnabled: defaults.TelegramOAuthEnabled,
   TelegramBotToken: defaults.TelegramBotToken ?? '',
@@ -222,6 +237,11 @@ const normalizeFormValues = (values: OAuthFormValues): FlatOAuthDefaults => ({
   'oidc.authorization_endpoint': values.oidc.authorization_endpoint,
   'oidc.token_endpoint': values.oidc.token_endpoint,
   'oidc.user_info_endpoint': values.oidc.user_info_endpoint,
+  'oidc.redirect_uri': values.oidc.redirect_uri,
+  'oidc.resource': values.oidc.resource,
+  'oidc.scope': values.oidc.scope,
+  'oidc.admin_scope': values.oidc.admin_scope,
+  'oidc.root_scope': values.oidc.root_scope,
   TelegramOAuthEnabled: values.TelegramOAuthEnabled,
   TelegramBotToken: values.TelegramBotToken,
   TelegramBotName: values.TelegramBotName,
@@ -787,6 +807,137 @@ export function OAuthSection(props: OAuthSectionProps) {
                       <FormControl>
                         <Input
                           placeholder={t('Override auto-discovered endpoint')}
+                          autoComplete='off'
+                          value={field.value ?? ''}
+                          onChange={(event) =>
+                            field.onChange(event.target.value)
+                          }
+                          name={field.name}
+                          onBlur={field.onBlur}
+                          ref={field.ref}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name='oidc.redirect_uri'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('Redirect URL')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder={oidcCallbackUrl}
+                          autoComplete='off'
+                          value={field.value ?? ''}
+                          onChange={(event) =>
+                            field.onChange(event.target.value)
+                          }
+                          name={field.name}
+                          onBlur={field.onBlur}
+                          ref={field.ref}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        {t('Leave blank to use the site URL above')}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name='oidc.scope'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('Scope')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder='openid profile email'
+                          autoComplete='off'
+                          value={field.value ?? ''}
+                          onChange={(event) =>
+                            field.onChange(event.target.value)
+                          }
+                          name={field.name}
+                          onBlur={field.onBlur}
+                          ref={field.ref}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        {t('Space-separated scopes requested from the provider')}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name='oidc.resource'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('Resource (Optional)')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder='https://account.cqaiclub.asia'
+                          autoComplete='off'
+                          value={field.value ?? ''}
+                          onChange={(event) =>
+                            field.onChange(event.target.value)
+                          }
+                          name={field.name}
+                          onBlur={field.onBlur}
+                          ref={field.ref}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        {t(
+                          'Logto API resource indicator; required for resource-specific scopes'
+                        )}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name='oidc.admin_scope'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('Admin scope')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder='account:admin'
+                          autoComplete='off'
+                          value={field.value ?? ''}
+                          onChange={(event) =>
+                            field.onChange(event.target.value)
+                          }
+                          name={field.name}
+                          onBlur={field.onBlur}
+                          ref={field.ref}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name='oidc.root_scope'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('Root scope')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder='account:root'
                           autoComplete='off'
                           value={field.value ?? ''}
                           onChange={(event) =>

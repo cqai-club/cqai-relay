@@ -132,7 +132,10 @@ export function useOAuthLogin(
       const url = buildOIDCOAuthUrl(
         status.oidc_authorization_endpoint,
         status.oidc_client_id,
-        state
+        state,
+        status.oidc_redirect_uri,
+        status.oidc_scope,
+        status.oidc_resource
       )
       window.open(url, '_self')
     } catch {
