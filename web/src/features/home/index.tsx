@@ -26,7 +26,17 @@ import { useTheme } from '@/context/theme-provider'
 import { isLikelyHtml } from '@/lib/content-format'
 import { useAuthStore } from '@/stores/auth-store'
 
-import { CTA, Features, Hero, HowItWorks, Stats } from './components'
+import {
+  Adoption,
+  Architecture,
+  CTA,
+  Gallery,
+  Hero,
+  ModelEcosystem,
+  Strategy,
+  WhyChoose,
+  WhyRelay,
+} from './components'
 import { useHomePageContent } from './hooks'
 
 export function Home() {
@@ -123,9 +133,13 @@ export function Home() {
   return (
     <PublicLayout showMainContainer={false}>
       <Hero isAuthenticated={isAuthenticated} />
-      <Stats />
-      <Features />
-      <HowItWorks />
+      <WhyRelay />
+      <ModelEcosystem />
+      <Strategy />
+      <Architecture />
+      <Adoption />
+      <Gallery />
+      <WhyChoose />
       <CTA isAuthenticated={isAuthenticated} />
       <Footer />
     </PublicLayout>

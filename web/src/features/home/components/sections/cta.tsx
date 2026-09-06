@@ -17,11 +17,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { Link } from '@tanstack/react-router'
-import { ArrowRight } from 'lucide-react'
+import { ArrowRight, GitBranch } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { AnimateInView } from '@/components/animate-in-view'
 import { Button } from '@/components/ui/button'
+
+import { NeonAurora } from '../neon-aurora'
 
 interface CTAProps {
   className?: string
@@ -31,54 +33,88 @@ interface CTAProps {
 export function CTA(props: CTAProps) {
   const { t } = useTranslation()
 
-  if (props.isAuthenticated) {
-    return null
-  }
-
   return (
     <section className='relative z-10 overflow-hidden px-6 py-24 md:py-32'>
-      {/* Gradient mesh background */}
-      <div
-        aria-hidden
-        className='absolute inset-0 -z-10 opacity-20 dark:opacity-[0.08]'
-        style={{
-          background: [
-            'radial-gradient(ellipse 50% 50% at 30% 50%, oklch(0.7 0.15 250 / 70%) 0%, transparent 70%)',
-            'radial-gradient(ellipse 40% 40% at 70% 40%, oklch(0.65 0.12 200 / 50%) 0%, transparent 70%)',
-          ].join(', '),
-        }}
-      />
+      <div className='relative mx-auto max-w-4xl'>
+        <NeonAurora className='-inset-6 -z-10' />
+        <div className='relative rounded-[2rem]'>
+          <div
+            aria-hidden
+            className='neon-flow-border pointer-events-none absolute -inset-px rounded-[2rem]'
+          />
+          <div className='bg-background/80 relative overflow-hidden rounded-[2rem] border border-transparent px-6 py-16 backdrop-blur-xl md:px-16 md:py-20 dark:bg-[#0d0a1e]/80'>
+            <div
+              aria-hidden
+              className='absolute inset-0 bg-gradient-to-br from-violet-500/[0.07] via-transparent to-fuchsia-500/[0.07]'
+            />
+            <div
+              aria-hidden
+              className='animate-neon-beam pointer-events-none absolute inset-y-0 left-0 hidden w-1/4 bg-gradient-to-r from-transparent via-white/[0.06] to-transparent md:block'
+            />
 
-      <AnimateInView
-        className='mx-auto max-w-2xl text-center'
-        animation='scale-in'
-      >
-        <h2 className='text-2xl leading-tight font-bold tracking-tight md:text-4xl'>
-          {t('Ready to simplify')}
-          <br />
-          <span className='bg-gradient-to-r from-blue-400 via-violet-400 to-purple-500 bg-clip-text text-transparent'>
-            {t('your AI integration?')}
-          </span>
-        </h2>
-        <p className='text-muted-foreground/80 mx-auto mt-5 max-w-md text-sm leading-relaxed md:text-base'>
-          {t(
-            'Deploy your own gateway and start routing requests through your configured upstream services.'
-          )}
-        </p>
-        <div className='mt-8 flex items-center justify-center gap-3'>
-          <Button className='group rounded-lg' render={<Link to='/sign-up' />}>
-            {t('Get Started')}
-            <ArrowRight className='ml-1 size-3.5 transition-transform duration-200 group-hover:translate-x-0.5' />
-          </Button>
-          <Button
-            variant='outline'
-            className='border-border/50 hover:border-border hover:bg-muted/50 rounded-lg'
-            render={<Link to='/pricing' />}
-          >
-            {t('View Pricing')}
-          </Button>
+            <AnimateInView
+              className='relative mx-auto max-w-2xl text-center'
+              animation='scale-in'
+            >
+              <h2 className='text-3xl leading-tight font-bold tracking-tight md:text-4xl'>
+                {t('Give every AI app')}
+                <br />
+                <span className='text-gradient-muted neon-text-drop inline-block bg-clip-text pb-1 text-transparent'>
+                  {t('one governed brain')}
+                </span>
+              </h2>
+              <p className='text-muted-foreground/80 mx-auto mt-5 max-w-md text-sm leading-relaxed md:text-base'>
+                {t(
+                  'Connect, configure and ship — one platform for model management and application supply.'
+                )}
+              </p>
+              <div className='mt-8 flex flex-wrap items-center justify-center gap-3'>
+                {!props.isAuthenticated && (
+                  <Button
+                    className='btn-neon group relative h-11 overflow-hidden rounded-lg px-5'
+                    render={<Link to='/sign-up' />}
+                  >
+                    <span
+                      aria-hidden
+                      className='animate-neon-beam pointer-events-none absolute inset-y-0 left-0 w-1/3 bg-gradient-to-r from-transparent via-white/30 to-transparent'
+                    />
+                    {t('Get Started')}
+                    <ArrowRight className='ml-1 size-3.5 transition-transform duration-200 group-hover:translate-x-0.5' />
+                  </Button>
+                )}
+                <Button
+                  variant='outline'
+                  className='neon-ring border-border/60 h-11 rounded-lg px-5 dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/[0.06]'
+                  render={<Link to='/dashboard' />}
+                >
+                  {props.isAuthenticated
+                    ? t('Go to Dashboard')
+                    : t('Explore Console')}
+                </Button>
+                <Button
+                  variant='ghost'
+                  className='text-muted-foreground hover:text-foreground inline-flex h-11 items-center gap-1.5 rounded-lg px-3 text-sm font-medium'
+                  render={
+                    <a
+                      href='https://github.com/cqai-club/cqai-relay'
+                      target='_blank'
+                      rel='noopener noreferrer'
+                    />
+                  }
+                >
+                  <GitBranch className='size-4' />
+                  <span>GitHub</span>
+                </Button>
+              </div>
+              <p className='text-muted-foreground/50 mt-6 text-xs'>
+                {t(
+                  'Supports private deployment and custom domestic model onboarding.'
+                )}
+              </p>
+            </AnimateInView>
+          </div>
         </div>
-      </AnimateInView>
+      </div>
     </section>
   )
 }
