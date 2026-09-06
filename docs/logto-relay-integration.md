@@ -70,14 +70,18 @@ type OIDCSettings struct {
 
 `GetUserInfo`：
 
-- Logto `/oidc/me` 返回的字段：`sub`、`email`、`name`、`email_verified`、
-  `username`、`picture`。你的 `oidcUser` 结构体已基本匹配（`sub/email/name/
-  preferred_username/picture`）。
-- 增加解析 **scope** 并映射角色的能力：在 `ExchangeToken` 成功后，从
-  `oidcResponse.Scope`（空格分隔字符串）里取 `settings.AdminScope` /
-  `settings.RootScope`，放进 `OAuthToken` 的 `Extra`（如
-  `setRoleFromScopes(token, settings)`），并在 `GetUserInfo` 返回的
-  `OAuthUser` 的 `Extra["role"]` 里带出 `10`/`100`/`1`。
+- 优先校验并读取 Logto 返回的 **ID Token**，不再把带有 API Resource
+  audience 的 Access Token 发送到 `/oidc/me`。ID Token 使用 discovery 文档中的
+  `issuer`、`jwks_uri` 和客户端 `client_id` 校验签名、发行者、受众、过期时间和
+  签发时间。
+- ID Token 只读取标准用户字段 `sub`、`email`、`name`、`preferred_username` 和
+  `username`。Relay 管理员角色使用 Token 响应中的已授予 Resource Scope 映射，
+  不依赖 Logto 自定义 JWT Claims。
+- 只有在 Token 响应没有 ID Token 时，才回退调用 `/oidc/me`；因此配置了
+  `resource=https://account.cqaiclub.asia` 时，Relay 原生登录仍然可以使用资源权限，
+  同时不会把 Account Service 的资源 Token 当作 UserInfo Token。
+- 已存在的 OIDC 用户每次登录都会根据已授予的角色 scope 同步本地角色，避免首次
+  登录时的普通用户角色永久保留。
 
 ### 1.3 `controller/oauth.go` — 注册开关 + 角色写入
 
@@ -251,7 +255,7 @@ cd cqai-relay/web && bun install && bun run build
 | 文件 | 改动 |
 |---|---|
 | `setting/system_setting/oidc.go` | 新增 RedirectURI/Scope/AdminScope/RootScope + 默认值 |
-| `oauth/oidc.go` | redirect_uri/scope 用配置；解析 scope→role 写入 token/user |
+| `oauth/oidc.go` | redirect_uri/scope 用配置；校验 ID Token 并按已授予 scope 映射角色 |
 | `controller/oauth.go` | Logto 用户可自动建号；admin/root scope 映射角色；本地注册开关仍限制其他提供商 |
 | `controller/misc.go` | status 暴露 oidc_redirect_uri/oidc_scope |
 | `web/src/features/auth/types.ts` | SystemStatus 加 oidc_redirect_uri/oidc_scope |

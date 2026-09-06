@@ -122,6 +122,23 @@ func (p *OIDCProvider) ExchangeToken(ctx context.Context, code string, c *gin.Co
 
 func (p *OIDCProvider) GetUserInfo(ctx context.Context, token *OAuthToken) (*OAuthUser, error) {
 	settings := system_setting.GetOIDCSettings()
+	if token == nil {
+		return nil, NewOAuthError(i18n.MsgOAuthGetUserErr, nil)
+	}
+	if strings.TrimSpace(token.IDToken) != "" {
+		claims, err := validateOIDCIDToken(ctx, token.IDToken, settings)
+		if err != nil {
+			logOIDCIDTokenValidationFailure(ctx, err)
+			return nil, NewOAuthErrorWithRaw(i18n.MsgOAuthGetUserErr, nil, err.Error())
+		}
+		user, err := oidcUserFromIDToken(claims, token, settings)
+		if err != nil {
+			logger.LogError(ctx, fmt.Sprintf("[OAuth-OIDC] ID token user claims invalid: %s", err.Error()))
+			return nil, NewOAuthErrorWithRaw(i18n.MsgOAuthGetUserErr, nil, err.Error())
+		}
+		logger.LogDebug(ctx, fmt.Sprintf("[OAuth-OIDC] GetUserInfo from ID token success: sub=%s, username=%s, name=%s, email=%s, role=%d", user.ProviderUserID, user.Username, user.DisplayName, user.Email, user.Extra["role"]))
+		return user, nil
+	}
 
 	logger.LogDebug(ctx, "[OAuth-OIDC] GetUserInfo: userinfo_endpoint=%s", settings.UserInfoEndpoint)
 
