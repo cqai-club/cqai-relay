@@ -19,7 +19,7 @@ const (
 	LangZhCN    = "zh-CN"
 	LangZhTW    = "zh-TW"
 	LangEn      = "en"
-	DefaultLang = LangEn // Fallback to English if language not supported
+	DefaultLang = LangZhCN // Fallback to Simplified Chinese if language is not specified or supported
 )
 
 //go:embed locales/*.yaml
@@ -126,7 +126,7 @@ func SetUserLangLoader(loader func(userId int) string) {
 // 1. User settings (ContextKeyUserSetting) - if already loaded (e.g., by TokenAuth)
 // 2. Lazy load user language from cache/DB using user ID
 // 3. Language set by middleware (ContextKeyLanguage) - from Accept-Language header
-// 4. Default language (English)
+// 4. Default language (Simplified Chinese)
 func GetLangFromContext(c *gin.Context) string {
 	if c == nil {
 		return DefaultLang
