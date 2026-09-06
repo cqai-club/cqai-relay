@@ -112,3 +112,25 @@ func TestOIDCExchangeTokenUsesConfiguredRedirectAndScope(t *testing.T) {
 	require.NotNil(t, token.Extra)
 	assert.Equal(t, common.RoleRootUser, token.Extra["role"])
 }
+
+func TestOIDCGetUserInfoAllowsMissingEmail(t *testing.T) {
+	settings := system_setting.GetOIDCSettings()
+	originalUserInfoEndpoint := settings.UserInfoEndpoint
+	t.Cleanup(func() { settings.UserInfoEndpoint = originalUserInfoEndpoint })
+
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		assert.Equal(t, "Bearer access", request.Header.Get("Authorization"))
+		writer.Header().Set("Content-Type", "application/json")
+		_, err := writer.Write([]byte(`{"sub":"logto-sub","username":"alice","name":"Alice"}`))
+		require.NoError(t, err)
+	}))
+	defer server.Close()
+
+	settings.UserInfoEndpoint = server.URL
+	user, err := (&OIDCProvider{}).GetUserInfo(context.Background(), &OAuthToken{AccessToken: "access"})
+
+	require.NoError(t, err)
+	assert.Equal(t, "logto-sub", user.ProviderUserID)
+	assert.Equal(t, "alice", user.Username)
+	assert.Empty(t, user.Email)
+}
