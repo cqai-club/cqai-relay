@@ -78,6 +78,7 @@ export function buildOIDCOAuthUrl(
   if (resource) url.searchParams.set('resource', resource)
   url.searchParams.set('scope', scope || 'openid profile email')
   url.searchParams.set('state', state)
+  url.searchParams.set('prompt', 'login')
   return url.toString()
 }
 
