@@ -138,7 +138,7 @@ export function Hero(props: HeroProps) {
               <>
                 <Button
                   className='btn-neon group relative h-11 overflow-hidden rounded-lg px-5 text-sm font-medium'
-                  render={<Link to='/sign-up' />}
+                  render={<Link to='/sign-in' />}
                 >
                   <span
                     aria-hidden
