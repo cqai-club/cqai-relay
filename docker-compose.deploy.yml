@@ -1,11 +1,8 @@
 services:
   new-api:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
-    image: cqai-relay:${IMAGE_TAG:-latest}
+    # Production images are built by GitHub Actions and pulled from GHCR.
+    # IMAGE_TAG is normally an immutable sha-* tag supplied by the deploy job.
+    image: ${IMAGE_REPOSITORY:-ghcr.io/cqai-club/cqai-relay}:${IMAGE_TAG:-latest}
     container_name: cqai-relay
     restart: unless-stopped
     command: --log-dir /app/logs
