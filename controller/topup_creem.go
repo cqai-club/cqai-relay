@@ -117,7 +117,7 @@ func (*CreemAdaptor) RequestPay(c *gin.Context, req *CreemPayRequest) {
 	// 创建支付链接，传入用户邮箱和可选的业务方回跳地址
 	successURL := ""
 	if req.SuccessURL != nil {
-		resolvedSuccessURL, resolveErr := resolvePaymentReturnURL(*req.SuccessURL, "")
+		resolvedSuccessURL, resolveErr := resolvePaymentReturnURL(c, *req.SuccessURL, "")
 		if resolveErr != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"message": resolveErr.Error(), "data": ""})
 			return

@@ -18,6 +18,8 @@ type internalPaymentEnvelope struct {
 	Payload map[string]interface{} `json:"payload"`
 }
 
+const internalPaymentRequestContextKey = "account_service_payment"
+
 // InternalGetTopUpInfo exposes the existing server-side payment configuration
 // to the trusted Account Service without exposing the NewAPI dashboard auth
 // flow to a Logto browser client.
@@ -136,6 +138,7 @@ func withInternalPaymentPayload(c *gin.Context, dispatch func(*gin.Context)) {
 	}
 
 	c.Set("id", request.UserId)
+	c.Set(internalPaymentRequestContextKey, true)
 	c.Request.Body = io.NopCloser(bytes.NewReader(payload))
 	dispatch(c)
 }
