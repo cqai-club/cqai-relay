@@ -93,6 +93,11 @@ func CreateModelMeta(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if err := model.ValidateModelCategories(m.Capabilities); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	m.Capabilities = model.NormalizeModelCategories(m.Capabilities)
 	if m.ModelName == "" {
 		common.ApiErrorMsg(c, "模型名称不能为空")
 		return
@@ -123,6 +128,11 @@ func UpdateModelMeta(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if err := model.ValidateModelCategories(m.Capabilities); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	m.Capabilities = model.NormalizeModelCategories(m.Capabilities)
 	if m.Id == 0 {
 		common.ApiErrorMsg(c, "缺少模型 ID")
 		return

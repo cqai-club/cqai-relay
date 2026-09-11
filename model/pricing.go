@@ -87,6 +87,7 @@ func InvalidatePricingCache() {
 
 	pricingMap = nil
 	vendorsList = nil
+	clearModelCatalogMetadata()
 	lastGetPricingTime = time.Time{}
 }
 
@@ -359,12 +360,17 @@ func updatePricing() {
 	}
 
 	pricingMap = make([]Pricing, 0)
+	modelCatalogMetadata := make(map[string]ModelCatalogMetadata)
 	pluginGeneration := jsplugin.DefaultRegistry.Generation()
 	for model, groups := range modelGroupsMap {
 		pricing := Pricing{
 			ModelName:              model,
 			EnableGroup:            groups.Items(),
 			SupportedEndpointTypes: modelSupportEndpointTypes[model],
+		}
+
+		catalogMetadata := ModelCatalogMetadata{
+			Categories: CatalogModelCategories(nil),
 		}
 
 		// 补充模型元数据（描述、标签、供应商、状态）
@@ -377,7 +383,14 @@ func updatePricing() {
 			pricing.Icon = meta.Icon
 			pricing.Tags = meta.Tags
 			pricing.VendorID = meta.VendorID
+			catalogMetadata.Description = meta.Description
+			catalogMetadata.Icon = meta.Icon
+			catalogMetadata.Categories = CatalogModelCategories(meta.Capabilities)
+			if vendor := vendorMap[meta.VendorID]; vendor != nil {
+				catalogMetadata.Vendor = vendor.Name
+			}
 		}
+		modelCatalogMetadata[model] = catalogMetadata
 		modelPrice, findPrice := ratio_setting.GetModelPrice(model, false)
 		if findPrice {
 			pricing.ModelPrice = modelPrice
@@ -434,6 +447,7 @@ func updatePricing() {
 		}
 		pricingMap = append(pricingMap, pricing)
 	}
+	replaceModelCatalogMetadata(modelCatalogMetadata)
 
 	// 防止大更新后数据不通用
 	if len(pricingMap) > 0 {

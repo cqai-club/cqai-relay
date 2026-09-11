@@ -1,6 +1,6 @@
 # Logto 统一身份与 Account Service 桥接架构
 
-> 记录日期：2026-09-06
+> 工作副本校验日期：2026-09-07
 >
 > 本文同时描述 `cqai-relay` 与 `cqai-account-service` 的职责、当前实现边界和后续验收要求，避免把“Relay 直接 OIDC 登录”和“Account Service 桥接 AI 请求”误认为同一条链路。
 
@@ -18,7 +18,7 @@
 
 - 管理 NewAPI 用户、API Token、额度、渠道和 AI 请求。
 - 提供受内部 Token 保护的 `POST /api/internal/provision`，供 Account Service 幂等创建/复用外部身份和应用凭证。
-- 当前还保留传统 Web OIDC 登录：`/oauth/oidc` 服务端换 Token、读取 UserInfo、创建 Relay 本地 Session。
+- 当前还保留传统 Web OIDC 登录：`/oauth/oidc` 服务端换 Token，优先验证 ID Token，必要时回退读取 UserInfo，然后创建 Relay 本地 Session。
 
 ### cqai-account-service
 
@@ -36,8 +36,10 @@
 ```text
 Logto
   -> cqai-relay /oauth/oidc
-  -> Relay 服务端换 Token并调用 /oidc/me
+  -> Relay 服务端换 Token
+  -> discovery + JWKS 验证 ID Token（缺少 ID Token 时回退 /oidc/me）
   -> users.oidc_id 本地建号/复用
+  -> 按已授予 role scope 同步已有用户角色
   -> Relay Session + Relay access token
   -> Relay 自身 API / AI 网关
 ```
@@ -53,7 +55,7 @@ Logto API Access Token
   -> 服务端使用 NewAPI Key 调用 Relay
 ```
 
-当前代码没有把链路 A 自动切换为链路 B。Relay 前端也没有调用 Account Service SDK、`/api/account` 或 `/v1/*`。
+链路 A 与链路 B 保持不同的认证上下文，但已在 Relay 用户层收敛：provisioning 在新建 `ExternalAccountIdentity` 前会按 `users.oidc_id == subject` 复用原生 OIDC 用户；由 Account Service 先建号时也会写入同一 `oidc_id`。Relay 前端不调用 Account Service SDK、`/api/account` 或 `/v1/*`，因为它当前定位为管理面。
 
 ## 4. 当前实现状态
 
@@ -61,13 +63,14 @@ Logto API Access Token
 |---|---|---|
 | Relay 使用 Logto 登录 | 已基本实现 | 传统 Web Authorization Code + client secret |
 | 关闭 Relay 本地注册后允许 Logto 用户首次建号 | 已实现 | OIDC 被视为可信注册权威 |
-| `account:admin` / `account:root` 映射 Relay 角色 | 已实现 | 当前主要在首次建号时写入角色 |
+| `account:admin` / `account:root` 映射 Relay 角色 | 已实现 | 首次建号写入，已有 OIDC 用户每次登录同步 |
 | Relay `/api/internal/provision` | 已实现 | 内部 Token、参数校验、幂等和并发保护 |
 | Account Service JWT 校验 | 已实现 | JWKS、issuer、audience、exp、scope、client map |
 | Account Service `/api/account` 和 `/v1/*` | 已实现 | 服务端持有 NewAPI Key，浏览器不接触完整 Key |
-| Relay 实际使用 Account Service 作为统一桥接 | 未完成 | 目前 Relay 仍走自身 OIDC 建号和 Session |
-| Relay 与 Account Service 共用同一个本地用户 | 未完成 | 两套身份表尚未合并 |
-| 跨产品统一额度 | 未完成 | 可能产生两套用户/Token/额度 |
+| 业务 AI 请求使用 Account Service 桥接 | 已实现接口 | Relay 管理前端仍使用自身 OIDC/Session，属于独立管理面 |
+| Relay OIDC 与 Account Service 复用同一本地用户 | 已实现 | 两个先后顺序都通过 `users.oidc_id == subject` 收敛 |
+| 跨 platform 复用用户并分配独立凭证 | 已实现 | 同一用户不同 platform 复用用户并新建 AppCredential |
+| 公网端到端闭环 | 未验证 | 本次只确认代码和测试，不代表当前运行镜像 |
 
 ## 5. 关键身份和凭证模型
 
@@ -75,6 +78,9 @@ Logto API Access Token
 
 - 绑定字段：`users.oidc_id`，当前主要保存 Logto `sub`。
 - 账号由 `findOrCreateOAuthUser` 创建。
+- 当 Token 响应包含 ID Token 时，使用 discovery 中的 issuer/JWKS 验证签名、Relay client audience、过期时间和签发时间。
+- 管理角色使用 Token 响应中已授予的 Resource Scope 映射，已有 OIDC 用户会在登录时同步。
+- 前端授权 URL 带 `prompt=login`，强制展示 Logto 登录页。
 - 登录后使用 Relay 自身 Session 和 access token。
 
 ### Account Service 桥接
@@ -86,11 +92,10 @@ Logto API Access Token
 
 ### 当前风险
 
-同一 Logto 用户分别走两条链路时，可能出现：
+当前单一 Logto issuer 下，两条链路已按 `subject` 复用同一 Relay 用户。剩余风险是：
 
-- Relay 直接登录创建一个本地用户；
-- Account Service provisioning 又创建另一个本地用户；
-- 两边的 Token、额度、禁用状态和角色不一致。
+- `external_account_identities` 的安全身份键包含 issuer，但 Relay 原生 `users.oidc_id` 仅保存 subject；未来多 issuer 时不能直接沿用现有收敛逻辑。
+- Relay OIDC 已有用户每次登录会同步角色，Account Service provisioning 只在首次建号时使用 role，两条链路的更新语义不同。
 
 ## 6. Scope、角色和配置要求
 
@@ -100,7 +105,7 @@ Account Service 默认要求 `ai:invoke`；角色 scope 为：
 - `account:admin` -> Relay role `10`
 - 无角色 scope -> Relay role `1`
 
-Relay 当前 OIDC 配置会请求基础 scope，并在配置了 `resource` 时追加 admin/root scope。若 Relay 后续要直接复用 Account Service 的 Access Token，还必须保证：
+Relay 当前 OIDC 配置会请求基础 scope，并在配置了 `resource` 时追加 admin/root scope。这条链路目前定位为管理面，不直接调用 Account Service。若未来要改为直接复用 Account Service 的 Access Token，还必须保证：
 
 - 授权请求包含 `ai:invoke`；
 - `resource` 与 Account Service 的 `LOGTO_AUDIENCE` 完全一致；
@@ -109,11 +114,9 @@ Relay 当前 OIDC 配置会请求基础 scope，并在配置了 `resource` 时�
 
 ## 7. 当前明确缺口
 
-1. Relay 登录成功后没有把 Logto Access Token 交给 Account Service，也没有统一通过 Account Service 发起 AI 请求。
-2. Relay 直接 OIDC 用户和 Account Service 外部身份用户没有共享同一用户主键。
-3. Relay 直接 OIDC 登录要求 UserInfo 有 email；Account Service 允许 email 缺失，两边用户准入规则不一致。
-4. 角色映射主要发生在首次建号，Logto 角色变更后的本地角色同步尚未定义。
-5. 旧的集成说明中同时存在“Account Service 是桥接核心”和“Account Service 为第二阶段可选能力”两种表述，后续必须选定唯一架构。
+1. Relay 原生 OIDC 的绑定列不包含 issuer，需在接入第二个 OIDC issuer 前扩展身份模型。
+2. Relay 管理面 OIDC 已在登录时同步已有用户角色，但 Account Service provisioning 只在首次建号时使用 role，两条链路的角色更新语义不一致。
+3. 本地代码能力已具备，但仍需用真实 Logto 用户、公网 Account Service 和当前 Relay 运行镜像完成端到端验收。
 
 ## 8. 推荐的最终架构选择
 
@@ -123,9 +126,7 @@ Relay 当前 OIDC 配置会请求基础 scope，并在配置了 `resource` 时�
 Logto -> Account Service -> Relay provisioning -> Relay AI API
 ```
 
-Relay 管理后台可以继续使用 Logto 做管理员登录，但必须明确它是管理面；业务产品和 AI 调用不能再单独通过 Relay OIDC 自动建一套用户。
-
-如果保留 Relay 直接 OIDC 建号，则只能把目标定义为“Relay 独立管理后台使用 Logto SSO”，不能宣称已经完成 Account Service 统一桥接和跨产品统一额度。
+Relay 管理后台继续使用 Logto 做管理员登录，业务产品和 AI 调用统一通过 Account Service。两条链路的用户已按同一 Logto subject 收敛，但对外口径仍应区分“代码已具备”与“公网端到端已验证”。
 
 ## 9. 验收清单
 
@@ -134,6 +135,6 @@ Relay 管理后台可以继续使用 Logto 做管理员登录，但必须明确�
 - Account Service `/api/account` 和 `/v1/*` 均能复用同一 provisioning 结果。
 - Relay 关闭本地注册后，Logto 用户仍可按策略自动建号。
 - `ai:invoke`、资源 audience、client-platform 映射全部一致。
-- Logto 角色变更后的本地权限同步策略已确定并验证。
+- Relay 管理面登录角色同步已验证，Account Service provisioning 对已有用户的角色更新策略已明确决策。
 - 浏览器网络和响应中不出现 NewAPI Service Token 或完整 NewAPI Key。
 - 完成真实 Logto -> Account Service -> Relay -> AI 的端到端验证，而不只验证单元测试。

@@ -65,6 +65,9 @@ func TestProvisionAccountIsIdempotentPerIdentityAndPlatform(t *testing.T) {
 	assert.Equal(t, first.TokenId, second.TokenId)
 	assert.Equal(t, first.ApiKey, second.ApiKey)
 	assert.Equal(t, 1_000, first.Quota)
+	assert.Equal(t, 1_000, first.TokenQuota)
+	assert.Equal(t, 0, first.TokenQuotaUsed)
+	assert.True(t, first.TokenUnlimitedQuota)
 	assert.Equal(t, "lingweave", first.Platform)
 	assert.Regexp(t, `^sk-[0-9A-Za-z]{48}$`, first.ApiKey)
 
@@ -90,7 +93,7 @@ func TestProvisionAccountIsIdempotentPerIdentityAndPlatform(t *testing.T) {
 	require.NoError(t, db.Where("user_id = ?", first.UserId).Find(&tokens).Error)
 	require.Len(t, tokens, 2)
 	for _, token := range tokens {
-		assert.False(t, token.UnlimitedQuota)
+		assert.True(t, token.UnlimitedQuota)
 		assert.Equal(t, common.QuotaForNewUser, token.RemainQuota)
 	}
 }
