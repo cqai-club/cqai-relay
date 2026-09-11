@@ -9,53 +9,92 @@ concurrency:
   group: shujubang-production
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE_REPOSITORY: ghcr.io/cqai-club/cqai-relay
+
 jobs:
-  package:
+  build-and-push:
+    name: Build and push production image
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Package source
-        run: tar --exclude=.git -czf /tmp/cqai-relay.tgz .
+      - name: Write immutable VERSION
+        run: echo "sha-${GITHUB_SHA}" > VERSION
 
-      - name: Upload deployment artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c99871dec2022cc055c062a10cc1a1310835ceb4 # v4.3.0
         with:
-          name: cqai-relay-source
-          path: /tmp/cqai-relay.tgz
-          if-no-files-found: error
-          retention-days: 1
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE_REPOSITORY }}
+          tags: |
+            type=raw,value=sha-${{ github.sha }}
+
+      - name: Build and push image
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: mode=max
+          sbom: true
+
+      - name: Image summary
+        run: |
+          echo "### Production image" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "${IMAGE_REPOSITORY}:sha-${GITHUB_SHA}" >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ steps.build.outputs.digest }}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
 
   deploy:
-    needs: package
+    name: Pull and deploy on server
+    needs: build-and-push
     runs-on: ubuntu-latest
     environment: production
+    permissions:
+      contents: read
+      packages: read
     steps:
-      - name: Download deployment artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: cqai-relay-source
+      - name: Checkout deployment compose
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Check DEPLOY_HOST
+      - name: Check deployment secrets
         env:
-          VALUE: ${{ secrets.DEPLOY_HOST }}
-        run: test -n "$VALUE"
-
-      - name: Check DEPLOY_USER
-        env:
-          VALUE: ${{ secrets.DEPLOY_USER }}
-        run: test -n "$VALUE"
-
-      - name: Check DEPLOY_SSH_KEY
-        env:
-          VALUE: ${{ secrets.DEPLOY_SSH_KEY }}
-        run: test -n "$VALUE"
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_USER"
+          test -n "$DEPLOY_SSH_KEY"
+          test -n "$GHCR_TOKEN"
 
       - name: Configure SSH
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
         run: |
@@ -70,38 +109,152 @@ jobs:
           fi
           chmod 600 ~/.ssh/known_hosts
 
-      - name: Upload source
+      - name: Upload deployment compose
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || 22 }}
         run: |
           set -eu
-          scp -P "$DEPLOY_PORT" cqai-relay.tgz "$DEPLOY_USER@$DEPLOY_HOST:/data/cqai-relay/incoming.tgz"
+          scp -P "$DEPLOY_PORT" docker-compose.deploy.yml \
+            "$DEPLOY_USER@$DEPLOY_HOST:/data/cqai-relay/docker-compose.deploy.yml"
 
-      - name: Deploy over SSH
+      - name: Upload temporary GHCR token
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || 22 }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TOKEN_FILE: /tmp/cqai-relay-ghcr-${{ github.run_id }}.token
         run: |
           set -eu
-          ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" <<'REMOTE'
+          printf '%s' "$GHCR_TOKEN" | ssh -p "$DEPLOY_PORT" \
+            "$DEPLOY_USER@$DEPLOY_HOST" "umask 077; cat > '$TOKEN_FILE'"
+
+      - name: Pull and deploy over SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || 22 }}
+          GHCR_USERNAME: ${{ github.actor }}
+          IMAGE_REPOSITORY: ${{ env.IMAGE_REPOSITORY }}
+          IMAGE_TAG: sha-${{ github.sha }}
+          TOKEN_FILE: /tmp/cqai-relay-ghcr-${{ github.run_id }}.token
+        run: |
           set -eu
+          ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "IMAGE_REPOSITORY='$IMAGE_REPOSITORY' IMAGE_TAG='$IMAGE_TAG' GHCR_USERNAME='$GHCR_USERNAME' TOKEN_FILE='$TOKEN_FILE' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+
           APP_DIR=/data/cqai-relay
+          COMPOSE_FILE=docker-compose.deploy.yml
+          IMAGE_REF="${IMAGE_REPOSITORY}:${IMAGE_TAG}"
+          APP_PORT=3002
+
           cd "$APP_DIR"
-          tar -xzf incoming.tgz
-          rm -f incoming.tgz
           test -f .env
-          docker compose --env-file .env -f docker-compose.deploy.yml up -d --build --remove-orphans
-          docker compose --env-file .env -f docker-compose.deploy.yml ps
+          test -f "$COMPOSE_FILE"
           APP_PORT=$(sed -n 's/^APP_PORT=//p' .env | tail -1)
-          for attempt in $(seq 1 30); do
-            if curl --fail --silent --show-error --max-time 5 "http://127.0.0.1:${APP_PORT:-3002}/api/status" >/dev/null; then
-              exit 0
+          APP_PORT=${APP_PORT:-3002}
+
+          DOCKER_CONFIG=$(mktemp -d)
+          cleanup_auth() {
+            rm -rf "$DOCKER_CONFIG" "$TOKEN_FILE"
+          }
+          trap cleanup_auth EXIT
+          export DOCKER_CONFIG
+
+          docker login ghcr.io \
+            --username "$GHCR_USERNAME" \
+            --password-stdin < "$TOKEN_FILE"
+          docker pull "$IMAGE_REF"
+          docker image inspect "$IMAGE_REF" >/dev/null
+
+          CURRENT_REF=$(docker inspect --format '{{.Config.Image}}' cqai-relay 2>/dev/null || true)
+          if [ -z "$CURRENT_REF" ] && docker image inspect "${IMAGE_REPOSITORY}:current" >/dev/null 2>&1; then
+            CURRENT_REF="${IMAGE_REPOSITORY}:current"
+          fi
+
+          HAS_CURRENT=0
+          if [ -n "$CURRENT_REF" ] && docker image inspect "$CURRENT_REF" >/dev/null 2>&1; then
+            HAS_CURRENT=1
+            docker tag "$CURRENT_REF" "${IMAGE_REPOSITORY}:deploy-rollback"
+          fi
+
+          wait_for_status() {
+            local attempt
+            for attempt in $(seq 1 30); do
+              if curl --fail --silent --show-error --max-time 5 \
+                "http://127.0.0.1:${APP_PORT}/api/status" >/dev/null; then
+                return 0
+              fi
+              sleep 2
+            done
+            return 1
+          }
+
+          deploy_image() {
+            local tag="$1"
+            IMAGE_TAG="$tag" docker compose --env-file .env -f "$COMPOSE_FILE" \
+              up -d --no-build --remove-orphans
+            IMAGE_TAG="$tag" docker compose --env-file .env -f "$COMPOSE_FILE" ps
+            IMAGE_TAG="$tag" wait_for_status
+          }
+
+          if ! deploy_image "$IMAGE_TAG"; then
+            docker logs --tail 100 cqai-relay || true
+            if [ "$HAS_CURRENT" -ne 1 ]; then
+              IMAGE_TAG="$IMAGE_TAG" docker compose --env-file .env -f "$COMPOSE_FILE" down
+              docker image rm "$IMAGE_REF" >/dev/null 2>&1 || true
+              echo "New deployment failed and no previous image is available for rollback" >&2
+              exit 1
             fi
-            sleep 2
+
+            echo "New deployment failed; restoring the previous image" >&2
+            if ! deploy_image deploy-rollback; then
+              docker logs --tail 100 cqai-relay || true
+              echo "Rollback deployment failed" >&2
+              exit 1
+            fi
+            docker tag "${IMAGE_REPOSITORY}:deploy-rollback" "${IMAGE_REPOSITORY}:current"
+            IMAGE_TAG=current docker compose --env-file .env -f "$COMPOSE_FILE" \
+              up -d --no-build --remove-orphans
+            docker image rm "${IMAGE_REPOSITORY}:deploy-rollback" >/dev/null 2>&1 || true
+            docker image rm "$IMAGE_REF" >/dev/null 2>&1 || true
+            echo "Rollback completed; the failed image was not promoted" >&2
+            exit 1
+          fi
+
+          # Promote the new image only after the live status endpoint is healthy.
+          if [ "$HAS_CURRENT" -eq 1 ]; then
+            docker tag "${IMAGE_REPOSITORY}:deploy-rollback" "${IMAGE_REPOSITORY}:rollback"
+          fi
+          docker tag "$IMAGE_REF" "${IMAGE_REPOSITORY}:current"
+          docker image rm "${IMAGE_REPOSITORY}:deploy-rollback" >/dev/null 2>&1 || true
+
+          # Keep only the immutable current image plus the two stable retention
+          # tags. The rollback tag is absent on the first successful deployment.
+          for image_ref in $(docker image ls "$IMAGE_REPOSITORY" --format '{{.Repository}}:{{.Tag}}'); do
+            case "$image_ref" in
+              "$IMAGE_REF"|"${IMAGE_REPOSITORY}:current"|"${IMAGE_REPOSITORY}:rollback") ;;
+              *) docker image rm "$image_ref" >/dev/null 2>&1 || true ;;
+            esac
           done
-          docker logs --tail 100 cqai-relay
-          exit 1
+          docker image prune -f >/dev/null
+
+          # Remove the old source-built tag after it has been retained as rollback.
+          if [ "$HAS_CURRENT" -eq 1 ] && [ "$CURRENT_REF" != "$IMAGE_REF" ]; then
+            case "$CURRENT_REF" in
+              "${IMAGE_REPOSITORY}:"*) ;;
+              *) docker image rm "$CURRENT_REF" >/dev/null 2>&1 || true ;;
+            esac
+          fi
+
+          echo "Deployed $IMAGE_REF"
+          echo "Current: ${IMAGE_REPOSITORY}:current"
+          if [ "$HAS_CURRENT" -eq 1 ]; then
+            echo "Rollback: ${IMAGE_REPOSITORY}:rollback"
+          else
+            echo "Rollback: not available until the next successful deployment"
+          fi
           REMOTE
