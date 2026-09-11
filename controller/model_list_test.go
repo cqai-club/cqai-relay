@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/config"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
@@ -390,6 +391,71 @@ func TestListModelsUsesAdvancedCustomEndpointTypesFromPricingCache(t *testing.T)
 		constant.EndpointTypeOpenAI,
 		constant.EndpointTypeOpenAIResponse,
 	}, payload.Data[0].SupportedEndpointTypes)
+}
+
+func TestListModelsIncludesCatalogMetadataAndFallbackCategory(t *testing.T) {
+	withSelfUseModeEnabled(t)
+	db := setupModelListControllerTestDB(t)
+	t.Cleanup(model.InvalidatePricingCache)
+
+	require.NoError(t, db.Create(&model.User{
+		Id:       1004,
+		Username: "catalog-model-list-user",
+		Password: "password",
+		Group:    "default",
+		Status:   common.UserStatusEnabled,
+	}).Error)
+	vendor := &model.Vendor{Name: "CQAI Vendor", Description: "vendor", Icon: "cqai"}
+	require.NoError(t, db.Create(vendor).Error)
+	require.NoError(t, db.Create(&model.Channel{
+		Id:     704,
+		Type:   constant.ChannelTypeOpenAI,
+		Key:    "catalog-channel-key",
+		Status: common.ChannelStatusEnabled,
+		Name:   "catalog-channel",
+		Group:  "default",
+		Models: "catalog-multimodal,catalog-legacy",
+	}).Error)
+	require.NoError(t, db.Create(&[]model.Ability{
+		{Group: "default", Model: "catalog-multimodal", ChannelId: 704, Enabled: true},
+		{Group: "default", Model: "catalog-legacy", ChannelId: 704, Enabled: true},
+	}).Error)
+	require.NoError(t, db.Create(&[]model.Model{
+		{
+			ModelName:    "catalog-multimodal",
+			Description:  "image and multimodal text",
+			Icon:         "cqai-avatar",
+			VendorID:     vendor.Id,
+			Capabilities: []types.ModelCategory{types.ModelCategoryImage, types.ModelCategoryTextMultimodal},
+			Status:       1,
+			NameRule:     model.NameRuleExact,
+		},
+		{
+			ModelName: "catalog-legacy",
+			Status:    1,
+			NameRule:  model.NameRuleExact,
+		},
+	}).Error)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	ctx.Set("id", 1004)
+
+	ListModels(ctx, constant.ChannelTypeOpenAI)
+
+	payload := decodeListModelsPayload(t, recorder)
+	byID := make(map[string]dto.OpenAIModels, len(payload.Data))
+	for _, item := range payload.Data {
+		byID[item.Id] = item
+	}
+	require.Contains(t, byID, "catalog-multimodal")
+	assert.Equal(t, "CQAI Vendor", byID["catalog-multimodal"].Vendor)
+	assert.Equal(t, "image and multimodal text", byID["catalog-multimodal"].Description)
+	assert.Equal(t, "cqai-avatar", byID["catalog-multimodal"].Icon)
+	assert.Equal(t, []types.ModelCategory{types.ModelCategoryImage, types.ModelCategoryTextMultimodal}, byID["catalog-multimodal"].Categories)
+	require.Contains(t, byID, "catalog-legacy")
+	assert.Equal(t, []types.ModelCategory{types.ModelCategoryOther}, byID["catalog-legacy"].Categories)
 }
 
 func TestListModelsTokenLimitIncludesTieredBillingModel(t *testing.T) {

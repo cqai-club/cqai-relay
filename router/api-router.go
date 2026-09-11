@@ -57,6 +57,19 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/ratio_config", middleware.CriticalRateLimit(), controller.GetRatioConfig)
 		apiRouter.POST("/internal/provision", middleware.InternalProvisionAuth(), anonymousRequestBodyLimit, controller.ProvisionExternalAccount)
 
+		// Account Service payment facade. These routes are server-to-server only;
+		// the handler reuses NewAPI's existing payment adapters and order ledger.
+		internalPaymentRoute := apiRouter.Group("/internal/payment")
+		internalPaymentRoute.Use(middleware.InternalProvisionAuth())
+		{
+			internalPaymentRoute.GET("/topup/info", controller.InternalGetTopUpInfo)
+			internalPaymentRoute.GET("/topup/self", controller.InternalGetUserTopUps)
+			internalPaymentRoute.POST("/topup/:provider", anonymousRequestBodyLimit, controller.InternalCreateTopUp)
+			internalPaymentRoute.GET("/subscription/plans", controller.InternalGetSubscriptionPlans)
+			internalPaymentRoute.GET("/subscription/self", controller.InternalGetSubscriptionSelf)
+			internalPaymentRoute.POST("/subscription/:provider", anonymousRequestBodyLimit, controller.InternalPurchaseSubscription)
+		}
+
 		apiRouter.POST("/stripe/webhook", anonymousRequestBodyLimit, controller.StripeWebhook)
 		apiRouter.POST("/creem/webhook", anonymousRequestBodyLimit, controller.CreemWebhook)
 		apiRouter.POST("/waffo/webhook", anonymousRequestBodyLimit, controller.WaffoWebhook)

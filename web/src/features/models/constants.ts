@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { type TFunction } from 'i18next'
+import type { TFunction } from 'i18next'
 
 import type { NameRule, ModelStatus, SyncSource } from './types'
 
@@ -168,6 +168,15 @@ export const ENDPOINT_TEMPLATES: Record<
   'image-generation': { path: '/v1/images/generations', method: 'POST' },
   embeddings: { path: '/v1/embeddings', method: 'POST' },
 }
+
+export const MODEL_CAPABILITY_VALUES = [
+  'image',
+  'video',
+  'text-multimodal',
+  'text',
+  'audio',
+  'other',
+] as const
 
 // ============================================================================
 // Sync Locale Options

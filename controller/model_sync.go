@@ -9,12 +9,14 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/relaykit/types"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -56,14 +58,15 @@ type upstreamEnvelope[T any] struct {
 }
 
 type upstreamModel struct {
-	Description string          `json:"description"`
-	Endpoints   json.RawMessage `json:"endpoints"`
-	Icon        string          `json:"icon"`
-	ModelName   string          `json:"model_name"`
-	NameRule    int             `json:"name_rule"`
-	Status      int             `json:"status"`
-	Tags        string          `json:"tags"`
-	VendorName  string          `json:"vendor_name"`
+	Description  string                `json:"description"`
+	Endpoints    json.RawMessage       `json:"endpoints"`
+	Icon         string                `json:"icon"`
+	ModelName    string                `json:"model_name"`
+	NameRule     int                   `json:"name_rule"`
+	Status       int                   `json:"status"`
+	Tags         string                `json:"tags"`
+	Capabilities []types.ModelCategory `json:"capabilities"`
+	VendorName   string                `json:"vendor_name"`
 }
 
 type upstreamVendor struct {
@@ -373,13 +376,14 @@ func SyncUpstreamModels(c *gin.Context) {
 
 		// 创建模型
 		mi := &model.Model{
-			ModelName:   name,
-			Description: up.Description,
-			Icon:        up.Icon,
-			Tags:        up.Tags,
-			VendorID:    vendorID,
-			Status:      chooseStatus(up.Status, 1),
-			NameRule:    up.NameRule,
+			ModelName:    name,
+			Description:  up.Description,
+			Icon:         up.Icon,
+			Tags:         up.Tags,
+			Capabilities: model.NormalizeModelCategories(up.Capabilities),
+			VendorID:     vendorID,
+			Status:       chooseStatus(up.Status, 1),
+			NameRule:     up.NameRule,
 		}
 		if err := mi.Insert(); err == nil {
 			createdModels++
@@ -423,6 +427,10 @@ func SyncUpstreamModels(c *gin.Context) {
 				}
 				if containsField(ow.Fields, "tags") {
 					local.Tags = up.Tags
+					needUpdate = true
+				}
+				if containsField(ow.Fields, "capabilities") {
+					local.Capabilities = model.NormalizeModelCategories(up.Capabilities)
 					needUpdate = true
 				}
 				if containsField(ow.Fields, "vendor") {
@@ -593,7 +601,7 @@ func SyncUpstreamPreview(c *gin.Context) {
 		if !ok {
 			continue
 		}
-		fields := make([]conflictField, 0, 6)
+		fields := make([]conflictField, 0, 7)
 		if strings.TrimSpace(local.Description) != strings.TrimSpace(up.Description) {
 			fields = append(fields, conflictField{Field: "description", Local: local.Description, Upstream: up.Description})
 		}
@@ -602,6 +610,16 @@ func SyncUpstreamPreview(c *gin.Context) {
 		}
 		if strings.TrimSpace(local.Tags) != strings.TrimSpace(up.Tags) {
 			fields = append(fields, conflictField{Field: "tags", Local: local.Tags, Upstream: up.Tags})
+		}
+		if !slices.Equal(
+			model.NormalizeModelCategories(local.Capabilities),
+			model.NormalizeModelCategories(up.Capabilities),
+		) {
+			fields = append(fields, conflictField{
+				Field:    "capabilities",
+				Local:    model.NormalizeModelCategories(local.Capabilities),
+				Upstream: model.NormalizeModelCategories(up.Capabilities),
+			})
 		}
 		// vendor 对比使用名称
 		localVendor := idToVendorName[local.VendorID]

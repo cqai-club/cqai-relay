@@ -50,18 +50,19 @@ func (AppCredential) TableName() string {
 }
 
 type AccountProvisionInput struct {
-	IdentityKey string
-	Issuer      string
-	Subject     string
-	Platform    string
-	Username    string
-	Password    string
-	DisplayName string
-	Email       string
-	Role        int
-	SyncProfile bool
-	TokenKey    string
-	TokenQuota  int
+	IdentityKey         string
+	Issuer              string
+	Subject             string
+	Platform            string
+	Username            string
+	Password            string
+	DisplayName         string
+	Email               string
+	Role                int
+	SyncProfile         bool
+	TokenKey            string
+	TokenQuota          int
+	TokenUnlimitedQuota bool
 }
 
 type AccountProvisionResult struct {
@@ -200,7 +201,7 @@ func ProvisionExternalAccount(input AccountProvisionInput) (*AccountProvisionRes
 			AccessedTime:   now,
 			ExpiredTime:    -1,
 			RemainQuota:    input.TokenQuota,
-			UnlimitedQuota: false,
+			UnlimitedQuota: input.TokenUnlimitedQuota,
 		}
 		if err := tx.Create(&result.Token).Error; err != nil {
 			return err

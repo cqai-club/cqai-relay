@@ -12,6 +12,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	operation_setting "github.com/QuantumNous/new-api/setting/operation_setting"
 )
 
 var (
@@ -37,18 +38,26 @@ type AccountProvisionRequest struct {
 }
 
 type AccountProvisionResponse struct {
-	UserId            int    `json:"user_id"`
-	TokenId           int    `json:"token_id"`
-	CredentialId      int64  `json:"credential_id"`
-	ApiKey            string `json:"api_key"`
-	Platform          string `json:"platform"`
-	UserCreated       bool   `json:"user_created"`
-	CredentialCreated bool   `json:"credential_created"`
-	KeyCreated        bool   `json:"key_created"`
-	UserStatus        int    `json:"user_status"`
-	TokenStatus       int    `json:"token_status"`
-	Quota             int    `json:"quota"`
-	QuotaUsed         int    `json:"quota_used"`
+	UserId                     int     `json:"user_id"`
+	TokenId                    int     `json:"token_id"`
+	CredentialId               int64   `json:"credential_id"`
+	ApiKey                     string  `json:"api_key"`
+	Platform                   string  `json:"platform"`
+	UserCreated                bool    `json:"user_created"`
+	CredentialCreated          bool    `json:"credential_created"`
+	KeyCreated                 bool    `json:"key_created"`
+	UserStatus                 int     `json:"user_status"`
+	TokenStatus                int     `json:"token_status"`
+	Quota                      int     `json:"quota"`
+	QuotaUsed                  int     `json:"quota_used"`
+	TokenQuota                 int     `json:"token_quota"`
+	TokenQuotaUsed             int     `json:"token_quota_used"`
+	TokenUnlimitedQuota        bool    `json:"token_unlimited_quota"`
+	QuotaDisplayType           string  `json:"quota_display_type"`
+	QuotaPerUnit               float64 `json:"quota_per_unit"`
+	USDExchangeRate            float64 `json:"usd_exchange_rate"`
+	CustomCurrencySymbol       string  `json:"custom_currency_symbol"`
+	CustomCurrencyExchangeRate float64 `json:"custom_currency_exchange_rate"`
 }
 
 // ProvisionAccount creates or retrieves one NewAPI user and one key per
@@ -118,10 +127,10 @@ func ProvisionAccount(request AccountProvisionRequest) (*AccountProvisionRespons
 		Role:        role,
 		SyncProfile: request.SyncProfile,
 		TokenKey:    tokenKey,
-		// Keep the per-key quota aligned with NewAPI's configured initial user
-		// quota. Never use MaxWalletQuota here: it is a wallet safety boundary,
-		// not an unlimited API-key grant.
-		TokenQuota: common.QuotaForNewUser,
+		// The bridge token is unlimited at the token gate; billing still checks
+		// the NewAPI user's wallet or subscription quota.
+		TokenQuota:          common.QuotaForNewUser,
+		TokenUnlimitedQuota: true,
 	})
 	if err != nil {
 		switch {
@@ -138,18 +147,26 @@ func ProvisionAccount(request AccountProvisionRequest) (*AccountProvisionRespons
 	}
 
 	return &AccountProvisionResponse{
-		UserId:            result.User.Id,
-		TokenId:           result.Token.Id,
-		CredentialId:      result.CredentialId,
-		ApiKey:            "sk-" + result.Token.GetFullKey(),
-		Platform:          platform,
-		UserCreated:       result.UserCreated,
-		CredentialCreated: result.CredentialCreated,
-		KeyCreated:        result.CredentialCreated,
-		UserStatus:        result.User.Status,
-		TokenStatus:       result.Token.Status,
-		Quota:             result.User.Quota,
-		QuotaUsed:         result.User.UsedQuota,
+		UserId:                     result.User.Id,
+		TokenId:                    result.Token.Id,
+		CredentialId:               result.CredentialId,
+		ApiKey:                     "sk-" + result.Token.GetFullKey(),
+		Platform:                   platform,
+		UserCreated:                result.UserCreated,
+		CredentialCreated:          result.CredentialCreated,
+		KeyCreated:                 result.CredentialCreated,
+		UserStatus:                 result.User.Status,
+		TokenStatus:                result.Token.Status,
+		Quota:                      result.User.Quota,
+		QuotaUsed:                  result.User.UsedQuota,
+		TokenQuota:                 result.Token.RemainQuota,
+		TokenQuotaUsed:             result.Token.UsedQuota,
+		TokenUnlimitedQuota:        result.Token.UnlimitedQuota,
+		QuotaDisplayType:           operation_setting.GetQuotaDisplayType(),
+		QuotaPerUnit:               common.QuotaPerUnit,
+		USDExchangeRate:            operation_setting.USDExchangeRate,
+		CustomCurrencySymbol:       operation_setting.GetGeneralSetting().CustomCurrencySymbol,
+		CustomCurrencyExchangeRate: operation_setting.GetGeneralSetting().CustomCurrencyExchangeRate,
 	}, nil
 }
 

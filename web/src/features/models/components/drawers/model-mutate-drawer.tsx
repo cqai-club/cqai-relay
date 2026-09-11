@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import type { TFunction } from 'i18next'
 import { ChevronDown, Loader2 } from 'lucide-react'
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useForm } from 'react-hook-form'
@@ -36,6 +37,7 @@ import {
 import { JsonEditor } from '@/components/json-editor'
 import { TagInput } from '@/components/tag-input'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Collapsible,
   CollapsibleContent,
@@ -82,9 +84,13 @@ import type { ModelSettings } from '@/features/system-settings/types'
 import { safeJsonParse } from '@/features/system-settings/utils/json-parser'
 
 import { createModel, updateModel, getModel, getVendors } from '../../api'
-import { getNameRuleOptions, ENDPOINT_TEMPLATES } from '../../constants'
+import {
+  getNameRuleOptions,
+  ENDPOINT_TEMPLATES,
+  MODEL_CAPABILITY_VALUES,
+} from '../../constants'
 import { modelsQueryKeys, vendorsQueryKeys, parseModelTags } from '../../lib'
-import type { Model } from '../../types'
+import type { Model, ModelCategory } from '../../types'
 
 // Extended schema for ratio configuration (internal form state only)
 const extendedModelFormSchema = z.object({
@@ -95,6 +101,7 @@ const extendedModelFormSchema = z.object({
   tags: z.array(z.string()),
   vendor_id: z.number().optional(),
   endpoints: z.string(),
+  capabilities: z.array(z.enum(MODEL_CAPABILITY_VALUES)),
   name_rule: z.number(),
   status: z.boolean(),
   sync_official: z.boolean(),
@@ -367,6 +374,7 @@ export function ModelMutateDrawer({
       tags: [],
       vendor_id: undefined,
       endpoints: '',
+      capabilities: [],
       name_rule: 0,
       status: true,
       sync_official: true,
@@ -435,6 +443,7 @@ export function ModelMutateDrawer({
         tags: parseModelTags(model.tags),
         vendor_id: model.vendor_id,
         endpoints: model.endpoints || '',
+        capabilities: model.capabilities || [],
         name_rule: model.name_rule || 0,
         status: model.status === 1,
         sync_official: model.sync_official === 1,
@@ -460,6 +469,7 @@ export function ModelMutateDrawer({
         tags: [],
         vendor_id: undefined,
         endpoints: '',
+        capabilities: [],
         name_rule: 0,
         status: true,
         sync_official: true,
@@ -871,6 +881,54 @@ export function ModelMutateDrawer({
                     <FormDescription>
                       {t('Press Enter or comma to add tags')}
                     </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='capabilities'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Model capabilities')}</FormLabel>
+                    <FormDescription>
+                      {t(
+                        'Select the capabilities exposed to Account Service model consumers.'
+                      )}
+                    </FormDescription>
+                    <div className='grid grid-cols-2 gap-3 pt-1'>
+                      {MODEL_CAPABILITY_VALUES.map((capability) => {
+                        const label = getModelCapabilityLabel(t, capability)
+                        return (
+                          <label
+                            key={capability}
+                            className='flex items-center gap-3 text-sm font-normal'
+                          >
+                            <Checkbox
+                              checked={field.value.includes(capability)}
+                              onCheckedChange={(checked) => {
+                                const current = field.value
+                                if (checked !== true) {
+                                  field.onChange(
+                                    current.filter(
+                                      (value) => value !== capability
+                                    )
+                                  )
+                                  return
+                                }
+                                if (current.includes(capability)) {
+                                  field.onChange(current)
+                                  return
+                                }
+                                field.onChange([...current, capability])
+                              }}
+                            />
+                            {label}
+                          </label>
+                        )
+                      })}
+                    </div>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -1390,4 +1448,24 @@ export function ModelMutateDrawer({
       </SheetContent>
     </Sheet>
   )
+}
+
+function getModelCapabilityLabel(
+  t: TFunction,
+  capability: ModelCategory
+): string {
+  switch (capability) {
+    case 'image':
+      return t('Image generation')
+    case 'video':
+      return t('Video generation')
+    case 'text-multimodal':
+      return t('Multimodal text')
+    case 'text':
+      return t('Text')
+    case 'audio':
+      return t('Audio')
+    case 'other':
+      return t('Other')
+  }
 }

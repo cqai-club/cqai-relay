@@ -175,6 +175,11 @@ func buildOpenAIModel(modelName string, ownerByModel map[string]string) dto.Open
 	if owner, ok := ownerByModel[modelName]; ok && owner != "" {
 		oaiModel.OwnedBy = owner
 	}
+	metadata := model.GetModelCatalogMetadata(modelName)
+	oaiModel.Vendor = metadata.Vendor
+	oaiModel.Description = metadata.Description
+	oaiModel.Icon = metadata.Icon
+	oaiModel.Categories = metadata.Categories
 	oaiModel.SupportedEndpointTypes = model.GetModelSupportEndpointTypes(modelName)
 	return oaiModel
 }
