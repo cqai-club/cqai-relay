@@ -83,16 +83,6 @@ func (*StripeAdaptor) RequestPay(c *gin.Context, req *StripePayRequest) {
 		return
 	}
 
-	if req.SuccessURL != "" && common.ValidateRedirectURL(req.SuccessURL) != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "支付成功重定向URL不在可信任域名列表中", "data": ""})
-		return
-	}
-
-	if req.CancelURL != "" && common.ValidateRedirectURL(req.CancelURL) != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "支付取消重定向URL不在可信任域名列表中", "data": ""})
-		return
-	}
-
 	id := c.GetInt("id")
 	user, err := model.GetUserById(id, false)
 	if err != nil || user == nil {
@@ -108,8 +98,28 @@ func (*StripeAdaptor) RequestPay(c *gin.Context, req *StripePayRequest) {
 
 	reference := fmt.Sprintf("new-api-ref-%d-%d-%s", user.Id, time.Now().UnixMilli(), randstr.String(4))
 	referenceId := "ref_" + common.Sha1([]byte(reference))
+	successURL, err := resolvePaymentReturnURL(req.SuccessURL, "")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "支付成功重定向URL不在可信任域名列表中", "data": ""})
+		return
+	}
+	cancelURL, err := resolvePaymentReturnURL(req.CancelURL, "")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "支付取消重定向URL不在可信任域名列表中", "data": ""})
+		return
+	}
+	successURL, err = addPaymentReturnParam(successURL, "cqai_order_id", referenceId)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "支付成功回跳地址无效", "data": ""})
+		return
+	}
+	cancelURL, err = addPaymentReturnParam(cancelURL, "cqai_order_id", referenceId)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "支付取消回跳地址无效", "data": ""})
+		return
+	}
 
-	payLink, err := genStripeLink(referenceId, user.StripeCustomer, user.Email, req.Amount, req.SuccessURL, req.CancelURL)
+	payLink, err := genStripeLink(referenceId, user.StripeCustomer, user.Email, req.Amount, successURL, cancelURL)
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Stripe 创建 Checkout Session 失败 user_id=%d trade_no=%s amount=%d error=%q", id, referenceId, req.Amount, err.Error()))
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "拉起支付失败"})
@@ -137,6 +147,7 @@ func (*StripeAdaptor) RequestPay(c *gin.Context, req *StripePayRequest) {
 		"message": "success",
 		"data": gin.H{
 			"pay_link": payLink,
+			"order_id": referenceId,
 		},
 	})
 }

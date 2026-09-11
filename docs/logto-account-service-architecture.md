@@ -29,6 +29,10 @@
   - `GET /api/account`：返回账号摘要，不返回 NewAPI Key。
   - `/v1/*`：使用服务端取得的 NewAPI Key 代理 AI 请求。
 
+### 支付回跳的跨客户端边界
+
+充值订单仍由 Relay 创建、保存并通过支付平台 webhook 入账。Account Service 只转发调用方提供的可选 `return_url`、`success_url` 和 `cancel_url`：网页版传入当前产品的 HTTPS 结果页，桌面应用传入已在 Relay 配置 `TRUSTED_PAYMENT_REDIRECT_URIS` 中登记的自定义协议地址。Relay 会在最终下发给支付渠道前校验回跳地址，并追加命名空间参数 `cqai_order_id`，客户端回到自身后仍需查询订单状态，不能把回跳本身当作支付成功证明。
+
 ## 3. 当前代码实际形成的两条链路
 
 ### 链路 A：Relay 管理后台登录

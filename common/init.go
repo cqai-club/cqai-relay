@@ -236,4 +236,14 @@ func initConstantEnv() {
 		}
 	}
 	constant.TrustedRedirectDomains = trustedDomains
+
+	trustedPaymentURIsStr := GetEnvOrDefaultString("TRUSTED_PAYMENT_REDIRECT_URIS", "")
+	var trustedPaymentURIs []string
+	for _, rawURI := range strings.Split(trustedPaymentURIsStr, ",") {
+		trimmedURI := strings.TrimSpace(rawURI)
+		if trimmedURI != "" {
+			trustedPaymentURIs = append(trustedPaymentURIs, strings.TrimRight(trimmedURI, "/"))
+		}
+	}
+	constant.TrustedPaymentRedirectURIs = trustedPaymentURIs
 }

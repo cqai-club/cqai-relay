@@ -127,6 +127,7 @@ func GetTopUpInfo(c *gin.Context) {
 type EpayRequest struct {
 	Amount        int64  `json:"amount"`
 	PaymentMethod string `json:"payment_method"`
+	ReturnURL     string `json:"return_url,omitempty"`
 }
 
 type AmountRequest struct {
@@ -300,10 +301,20 @@ func RequestEpay(c *gin.Context) {
 	}
 
 	callBackAddress := service.GetCallbackAddress()
-	returnUrl, _ := url.Parse(paymentReturnPath("/usage-logs"))
+	returnURL, err := resolvePaymentReturnURL(req.ReturnURL, paymentReturnPath("/usage-logs"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error(), "data": ""})
+		return
+	}
 	notifyUrl, _ := url.Parse(callBackAddress + "/api/user/epay/notify")
 	tradeNo := fmt.Sprintf("%s%d", common.GetRandomString(6), time.Now().Unix())
 	tradeNo = fmt.Sprintf("USR%dNO%s", id, tradeNo)
+	returnURL, err = addPaymentReturnParam(returnURL, "cqai_order_id", tradeNo)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "支付回跳地址无效", "data": ""})
+		return
+	}
+	returnUrl, _ := url.Parse(returnURL)
 	client := GetEpayClient()
 	if client == nil {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "当前管理员未配置支付信息"})

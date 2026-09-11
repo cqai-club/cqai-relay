@@ -19,7 +19,8 @@ import (
 )
 
 type WaffoPancakePayRequest struct {
-	Amount int64 `json:"amount"`
+	Amount    int64   `json:"amount"`
+	ReturnURL *string `json:"return_url,omitempty"`
 }
 
 func RequestWaffoPancakeAmount(c *gin.Context) {
@@ -378,6 +379,21 @@ func RequestWaffoPancakePay(c *gin.Context) {
 	}
 
 	tradeNo := fmt.Sprintf("WAFFO_PANCAKE-%d-%d-%s", id, time.Now().UnixMilli(), randstr.String(6))
+	requestedReturnURL := ""
+	if req.ReturnURL != nil {
+		requestedReturnURL = *req.ReturnURL
+	}
+	returnURL, err := resolvePaymentReturnURL(requestedReturnURL, setting.WaffoPancakeReturnURL)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error(), "data": ""})
+		return
+	}
+	returnURL, err = addPaymentReturnParam(returnURL, "cqai_order_id", tradeNo)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "支付回跳地址无效", "data": ""})
+		return
+	}
+
 	topUp := &model.TopUp{
 		UserId:          id,
 		Amount:          normalizeWaffoPancakeTopUpAmount(req.Amount),
@@ -405,6 +421,7 @@ func RequestWaffoPancakePay(c *gin.Context) {
 		BuyerEmail:              getWaffoPancakeBuyerEmail(user),
 		ExpiresInSeconds:        &expiresInSeconds,
 		OrderMerchantExternalID: tradeNo,
+		SuccessURL:              returnURL,
 	})
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Waffo Pancake 创建结账会话失败 user_id=%d trade_no=%s error=%q", id, tradeNo, err.Error()))

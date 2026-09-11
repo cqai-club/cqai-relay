@@ -37,3 +37,28 @@ func ValidateRedirectURL(rawURL string) error {
 
 	return fmt.Errorf("domain %s is not in the trusted domains list", domain)
 }
+
+// ValidatePaymentRedirectURL accepts the normal trusted HTTP(S) redirects and
+// exact custom-scheme callback bases registered for desktop clients.
+func ValidatePaymentRedirectURL(rawURL string) error {
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" {
+		return fmt.Errorf("invalid payment redirect URL")
+	}
+	if parsedURL.User != nil {
+		return fmt.Errorf("payment redirect URL must not contain credentials")
+	}
+	if parsedURL.Scheme == "http" || parsedURL.Scheme == "https" {
+		return ValidateRedirectURL(rawURL)
+	}
+	if parsedURL.Scheme == "blob" || parsedURL.Scheme == "data" || parsedURL.Scheme == "file" || parsedURL.Scheme == "ftp" || parsedURL.Scheme == "javascript" || parsedURL.Scheme == "mailto" {
+		return fmt.Errorf("invalid payment redirect URL scheme")
+	}
+	base := parsedURL.Scheme + "://" + parsedURL.Host + strings.TrimRight(parsedURL.Path, "/")
+	for _, trustedURI := range constant.TrustedPaymentRedirectURIs {
+		if strings.TrimRight(trustedURI, "/") == base {
+			return nil
+		}
+	}
+	return fmt.Errorf("payment redirect URI is not registered")
+}

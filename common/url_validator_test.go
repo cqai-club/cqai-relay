@@ -122,6 +122,25 @@ func TestValidateRedirectURL(t *testing.T) {
 	}
 }
 
+func TestValidatePaymentRedirectURLAllowsRegisteredDesktopScheme(t *testing.T) {
+	originalDomains := constant.TrustedRedirectDomains
+	originalURIs := constant.TrustedPaymentRedirectURIs
+	t.Cleanup(func() {
+		constant.TrustedRedirectDomains = originalDomains
+		constant.TrustedPaymentRedirectURIs = originalURIs
+	})
+
+	constant.TrustedRedirectDomains = nil
+	constant.TrustedPaymentRedirectURIs = []string{"cqai://payment/result"}
+
+	require.NoError(t, ValidatePaymentRedirectURL("cqai://payment/result?status=success"))
+	assert.Error(t, ValidatePaymentRedirectURL("cqai://other/result"))
+	assert.Error(t, ValidatePaymentRedirectURL("javascript:alert(1)"))
+
+	constant.TrustedRedirectDomains = []string{"example.com"}
+	assert.Error(t, ValidatePaymentRedirectURL("https://user:password@example.com/billing/result"))
+}
+
 func resetSessionCookieSettingsAfterTest(t *testing.T) {
 	t.Helper()
 	t.Cleanup(func() {

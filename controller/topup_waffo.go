@@ -105,10 +105,11 @@ func getWaffoPayMoney(amount float64, group string) float64 {
 }
 
 type WaffoPayRequest struct {
-	Amount         int64  `json:"amount"`
-	PayMethodIndex *int   `json:"pay_method_index"` // 服务端支付方式列表的索引，nil 表示由 Waffo 自动选择
-	PayMethodType  string `json:"pay_method_type"`  // Deprecated: 兼容旧前端，优先使用 pay_method_index
-	PayMethodName  string `json:"pay_method_name"`  // Deprecated: 兼容旧前端，优先使用 pay_method_index
+	Amount         int64   `json:"amount"`
+	PayMethodIndex *int    `json:"pay_method_index"` // 服务端支付方式列表的索引，nil 表示由 Waffo 自动选择
+	PayMethodType  string  `json:"pay_method_type"`  // Deprecated: 兼容旧前端，优先使用 pay_method_index
+	PayMethodName  string  `json:"pay_method_name"`  // Deprecated: 兼容旧前端，优先使用 pay_method_index
+	ReturnURL      *string `json:"return_url,omitempty"`
 }
 
 func RequestWaffoAmount(c *gin.Context) {
@@ -257,6 +258,19 @@ func RequestWaffoPay(c *gin.Context) {
 	returnUrl := paymentReturnPath("/wallet?show_history=true")
 	if setting.WaffoReturnUrl != "" {
 		returnUrl = setting.WaffoReturnUrl
+	}
+	if req.ReturnURL != nil {
+		resolvedReturnURL, err := resolvePaymentReturnURL(*req.ReturnURL, returnUrl)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"message": err.Error(), "data": ""})
+			return
+		}
+		returnUrl = resolvedReturnURL
+	}
+	returnUrl, err = addPaymentReturnParam(returnUrl, "cqai_order_id", merchantOrderId)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "支付回跳地址无效", "data": ""})
+		return
 	}
 
 	currency := getWaffoCurrency()

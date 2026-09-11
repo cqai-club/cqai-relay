@@ -23,3 +23,13 @@ func TestPaymentReturnPathUsesDefaultDashboardRoutes(t *testing.T) {
 		paymentReturnPath("/usage-logs"),
 	)
 }
+
+func TestPaymentReturnURLAddsOrderIDForWebAndDesktopClients(t *testing.T) {
+	webURL, err := addPaymentReturnParam("https://app.example.com/billing/result", "cqai_order_id", "ref_123")
+	assert.NoError(t, err)
+	assert.Equal(t, "https://app.example.com/billing/result?cqai_order_id=ref_123", webURL)
+
+	desktopURL, err := addPaymentReturnParam("cqai://payment/result?status=success", "cqai_order_id", "ref_123")
+	assert.NoError(t, err)
+	assert.Equal(t, "cqai://payment/result?cqai_order_id=ref_123&status=success", desktopURL)
+}
