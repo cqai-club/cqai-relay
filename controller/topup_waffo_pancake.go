@@ -383,7 +383,7 @@ func RequestWaffoPancakePay(c *gin.Context) {
 	if req.ReturnURL != nil {
 		requestedReturnURL = *req.ReturnURL
 	}
-	returnURL, err := resolvePaymentReturnURL(requestedReturnURL, setting.WaffoPancakeReturnURL)
+	returnURL, err := resolvePaymentReturnURL(c, requestedReturnURL, setting.WaffoPancakeReturnURL)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error(), "data": ""})
 		return

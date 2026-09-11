@@ -301,7 +301,7 @@ func RequestEpay(c *gin.Context) {
 	}
 
 	callBackAddress := service.GetCallbackAddress()
-	returnURL, err := resolvePaymentReturnURL(req.ReturnURL, paymentReturnPath("/usage-logs"))
+	returnURL, err := resolvePaymentReturnURL(c, req.ReturnURL, paymentReturnPath("/usage-logs"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error(), "data": ""})
 		return

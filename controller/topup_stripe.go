@@ -98,12 +98,12 @@ func (*StripeAdaptor) RequestPay(c *gin.Context, req *StripePayRequest) {
 
 	reference := fmt.Sprintf("new-api-ref-%d-%d-%s", user.Id, time.Now().UnixMilli(), randstr.String(4))
 	referenceId := "ref_" + common.Sha1([]byte(reference))
-	successURL, err := resolvePaymentReturnURL(req.SuccessURL, "")
+	successURL, err := resolvePaymentReturnURL(c, req.SuccessURL, "")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "支付成功重定向URL不在可信任域名列表中", "data": ""})
 		return
 	}
-	cancelURL, err := resolvePaymentReturnURL(req.CancelURL, "")
+	cancelURL, err := resolvePaymentReturnURL(c, req.CancelURL, "")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "支付取消重定向URL不在可信任域名列表中", "data": ""})
 		return

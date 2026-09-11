@@ -260,7 +260,7 @@ func RequestWaffoPay(c *gin.Context) {
 		returnUrl = setting.WaffoReturnUrl
 	}
 	if req.ReturnURL != nil {
-		resolvedReturnURL, err := resolvePaymentReturnURL(*req.ReturnURL, returnUrl)
+		resolvedReturnURL, err := resolvePaymentReturnURL(c, *req.ReturnURL, returnUrl)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"message": err.Error(), "data": ""})
 			return

@@ -31,7 +31,7 @@
 
 ### 支付回跳的跨客户端边界
 
-充值订单仍由 Relay 创建、保存并通过支付平台 webhook 入账。Account Service 只转发调用方提供的可选 `return_url`、`success_url` 和 `cancel_url`：网页版传入当前产品的 HTTPS 结果页，桌面应用传入已在 Relay 配置 `TRUSTED_PAYMENT_REDIRECT_URIS` 中登记的自定义协议地址。Relay 会在最终下发给支付渠道前校验回跳地址，并追加命名空间参数 `cqai_order_id`，客户端回到自身后仍需查询订单状态，不能把回跳本身当作支付成功证明。
+充值订单仍由 Relay 创建、保存并通过支付平台 webhook 入账。Account Service 根据 Logto Token 的 `client_id` 和客户端类型选择固定回跳：Web 按精确请求 `Origin` 选择，桌面使用 `LOGTO_CLIENT_PLATFORM_MAP` 中的自定义协议地址。调用方不再提交 `return_url`、`success_url` 或 `cancel_url`。Relay 内部 Account Service 支付入口只执行 URL 语法、凭据和危险协议检查，不依赖 `TRUSTED_REDIRECT_DOMAINS` / `TRUSTED_PAYMENT_REDIRECT_URIS`；Relay 原生管理后台/兼容入口仍执行原有白名单校验。Relay 会追加命名空间参数 `cqai_order_id`，客户端回到自身后仍需查询订单状态，不能把回跳本身当作支付成功证明。
 
 ## 3. 当前代码实际形成的两条链路
 

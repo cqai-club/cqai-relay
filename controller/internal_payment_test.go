@@ -56,6 +56,24 @@ func TestInternalCreateTopUpRejectsUnknownProvider(t *testing.T) {
 	assert.Contains(t, response.Body.String(), "PAYMENT_PROVIDER_NOT_FOUND")
 }
 
+func TestInternalPaymentPayloadMarksTrustedAccountServiceContext(t *testing.T) {
+	router := gin.New()
+	router.POST("/internal", func(c *gin.Context) {
+		withInternalPaymentPayload(c, func(c *gin.Context) {
+			assert.True(t, c.GetBool(internalPaymentRequestContextKey))
+			assert.Equal(t, 42, c.GetInt("id"))
+			c.JSON(http.StatusOK, gin.H{"ok": true})
+		})
+	})
+
+	request := httptest.NewRequest(http.MethodPost, "/internal", strings.NewReader(`{"user_id":42,"payload":{}}`))
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	assert.Equal(t, http.StatusOK, response.Code)
+	assert.Contains(t, response.Body.String(), `"ok":true`)
+}
+
 func TestInternalPaymentUserIdRejectsInvalidQuery(t *testing.T) {
 	router := gin.New()
 	router.GET("/api/internal/payment/topup/self", InternalGetUserTopUps)
