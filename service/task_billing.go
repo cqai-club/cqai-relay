@@ -57,6 +57,9 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo, task *model
 		other["is_model_mapped"] = true
 		other["upstream_model_name"] = info.UpstreamModelName
 	}
+	if info.RequestedModelName != "" && info.RequestedModelName != info.OriginModelName {
+		other["requested_model_name"] = info.RequestedModelName
+	}
 	if snap := info.TieredBillingSnapshot; snap != nil {
 		other["billing_mode"] = "tiered_expr"
 		other["expr_b64"] = base64.StdEncoding.EncodeToString([]byte(snap.ExprString))
@@ -160,6 +163,9 @@ func taskBillingOther(task *model.Task) map[string]interface{} {
 	if props.UpstreamModelName != "" && props.UpstreamModelName != props.OriginModelName {
 		other["is_model_mapped"] = true
 		other["upstream_model_name"] = props.UpstreamModelName
+	}
+	if props.RequestedModelName != "" && props.RequestedModelName != props.OriginModelName {
+		other["requested_model_name"] = props.RequestedModelName
 	}
 	appendTaskLogInfo(task, other)
 	return other

@@ -25,9 +25,13 @@ import (
 )
 
 type listModelsResponse struct {
-	Success bool               `json:"success"`
-	Data    []dto.OpenAIModels `json:"data"`
-	Object  string             `json:"object"`
+	Success    bool               `json:"success"`
+	Data       []dto.OpenAIModels `json:"data"`
+	Object     string             `json:"object"`
+	TotalCount int                `json:"total_count"`
+	Links      struct {
+		Next *string `json:"next"`
+	} `json:"links"`
 }
 
 type userModelsResponse struct {
@@ -50,7 +54,8 @@ func setupModelListControllerTestDB(t *testing.T) *gorm.DB {
 	model.DB = db
 	model.LOG_DB = db
 
-	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Channel{}, &model.Ability{}, &model.Model{}, &model.Vendor{}))
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Channel{}, &model.Ability{}, &model.Model{}, &model.ModelAlias{}, &model.Vendor{}))
+	require.NoError(t, model.InitModelAliasCache())
 
 	t.Cleanup(func() {
 		sqlDB, err := db.DB()
@@ -414,26 +419,29 @@ func TestListModelsIncludesCatalogMetadataAndFallbackCategory(t *testing.T) {
 		Status: common.ChannelStatusEnabled,
 		Name:   "catalog-channel",
 		Group:  "default",
-		Models: "catalog-multimodal,catalog-legacy",
+		Models: "catalog-multimodal,catalog-legacy,catalog-specialized",
 	}).Error)
 	require.NoError(t, db.Create(&[]model.Ability{
 		{Group: "default", Model: "catalog-multimodal", ChannelId: 704, Enabled: true},
 		{Group: "default", Model: "catalog-legacy", ChannelId: 704, Enabled: true},
+		{Group: "default", Model: "catalog-specialized", ChannelId: 704, Enabled: true},
 	}).Error)
 	require.NoError(t, db.Create(&[]model.Model{
 		{
-			ModelName:    "catalog-multimodal",
-			Description:  "image and multimodal text",
-			Icon:         "cqai-avatar",
-			VendorID:     vendor.Id,
+			ModelName: "catalog-multimodal", Description: "image and multimodal text", Icon: "cqai-avatar",
+			VendorID: vendor.Id, InputModalities: []string{"text", "image", "file"}, OutputModalities: []string{"text", "image"},
+			SupportedParameters: []string{"reasoning", "structured_outputs", "tools"}, ContextLength: 128000, MaxOutputTokens: 8192,
 			Capabilities: []types.ModelCategory{types.ModelCategoryImage, types.ModelCategoryTextMultimodal},
-			Status:       1,
-			NameRule:     model.NameRuleExact,
+			Status:       1, NameRule: model.NameRuleExact,
 		},
 		{
 			ModelName: "catalog-legacy",
 			Status:    1,
 			NameRule:  model.NameRuleExact,
+		},
+		{
+			ModelName: "catalog-specialized", InputModalities: []string{"text"}, OutputModalities: []string{"text"},
+			Capabilities: []types.ModelCategory{types.ModelCategoryOther}, Status: 1, NameRule: model.NameRuleExact,
 		},
 	}).Error)
 
@@ -454,8 +462,97 @@ func TestListModelsIncludesCatalogMetadataAndFallbackCategory(t *testing.T) {
 	assert.Equal(t, "image and multimodal text", byID["catalog-multimodal"].Description)
 	assert.Equal(t, "cqai-avatar", byID["catalog-multimodal"].Icon)
 	assert.Equal(t, []types.ModelCategory{types.ModelCategoryImage, types.ModelCategoryTextMultimodal}, byID["catalog-multimodal"].Categories)
+	assert.Equal(t, "catalog-multimodal", byID["catalog-multimodal"].CanonicalSlug)
+	assert.Equal(t, "catalog-multimodal", byID["catalog-multimodal"].Name)
+	require.NotNil(t, byID["catalog-multimodal"].Architecture)
+	assert.Equal(t, "text+image+file->text+image", byID["catalog-multimodal"].Architecture.Modality)
+	assert.Equal(t, []string{"text", "image", "file"}, byID["catalog-multimodal"].Architecture.InputModalities)
+	assert.Equal(t, []string{"text", "image"}, byID["catalog-multimodal"].Architecture.OutputModalities)
+	assert.Equal(t, []string{"reasoning", "structured_outputs", "tools"}, byID["catalog-multimodal"].SupportedParameters)
+	require.NotNil(t, byID["catalog-multimodal"].ContextLength)
+	assert.EqualValues(t, 128000, *byID["catalog-multimodal"].ContextLength)
+	require.NotNil(t, byID["catalog-multimodal"].MaxOutputTokens)
+	assert.EqualValues(t, 8192, *byID["catalog-multimodal"].MaxOutputTokens)
 	require.Contains(t, byID, "catalog-legacy")
 	assert.Equal(t, []types.ModelCategory{types.ModelCategoryOther}, byID["catalog-legacy"].Categories)
+	assert.Nil(t, byID["catalog-legacy"].Architecture)
+	assert.Nil(t, byID["catalog-legacy"].ContextLength)
+	require.Contains(t, byID, "catalog-specialized")
+	assert.Equal(t, []types.ModelCategory{types.ModelCategoryOther}, byID["catalog-specialized"].Categories)
+	require.NotNil(t, byID["catalog-specialized"].Architecture)
+	assert.Equal(t, "text->text", byID["catalog-specialized"].Architecture.Modality)
+
+	pricing := pricingByModelName(model.GetPricing())["catalog-multimodal"]
+	assert.Equal(t, byID["catalog-multimodal"].Architecture, pricing.Architecture)
+	assert.Equal(t, byID["catalog-multimodal"].SupportedParameters, pricing.SupportedParameters)
+	assert.Equal(t, byID["catalog-multimodal"].ContextLength, pricing.ContextLength)
+	assert.Equal(t, byID["catalog-multimodal"].MaxOutputTokens, pricing.MaxOutputTokens)
+	assert.Equal(t, byID["catalog-multimodal"].Categories, pricing.Categories)
+}
+
+func TestListModelsPublishesActiveAliasWithCanonicalMetadata(t *testing.T) {
+	withSelfUseModeEnabled(t)
+	db := setupModelListControllerTestDB(t)
+	t.Cleanup(model.InvalidatePricingCache)
+	vendor := &model.Vendor{Name: "OpenAI", Icon: "openai"}
+	require.NoError(t, db.Create(vendor).Error)
+	require.NoError(t, db.Create(&model.Channel{
+		Id: 705, Type: constant.ChannelTypeOpenAI, Key: "alias-channel-key",
+		Status: common.ChannelStatusEnabled, Name: "alias-channel", Group: "default", Models: "gpt-5",
+	}).Error)
+	require.NoError(t, db.Create(&model.Ability{Group: "default", Model: "gpt-5", ChannelId: 705, Enabled: true}).Error)
+	require.NoError(t, db.Create(&model.Model{
+		ModelName: "gpt-5", Description: "canonical metadata", Icon: "openai",
+		VendorID: vendor.Id, Capabilities: []types.ModelCategory{types.ModelCategoryTextMultimodal},
+		InputModalities: []string{"text", "image", "file"}, OutputModalities: []string{"text"},
+		SupportedParameters: []string{"reasoning", "reasoning_effort", "structured_outputs", "tools"},
+		ContextLength:       1_050_000, MaxOutputTokens: 128_000,
+		MetadataStatus: model.ModelMetadataStatusConfirmed, MetadataSource: model.ModelMetadataSourceBaseLLMExact,
+		Status: 1, SyncOfficial: 1,
+	}).Error)
+	require.NoError(t, model.CreateOrActivateModelAlias(db, "OpenAI/GPT-5", "gpt-5", model.ModelMetadataSourceBaseLLMNormalized, 2_000_000_000))
+	require.NoError(t, model.InitModelAliasCache())
+	model.RefreshPricing()
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	common.SetContextKey(ctx, constant.ContextKeyUserGroup, "default")
+	common.SetContextKey(ctx, constant.ContextKeyTokenModelLimitEnabled, true)
+	common.SetContextKey(ctx, constant.ContextKeyTokenModelLimit, map[string]bool{"OpenAI/GPT-5": true})
+
+	ListModels(ctx, constant.ChannelTypeOpenAI)
+
+	payload := decodeListModelsPayload(t, recorder)
+	byID := make(map[string]dto.OpenAIModels, len(payload.Data))
+	for _, item := range payload.Data {
+		byID[item.Id] = item
+	}
+	assert.Equal(t, len(payload.Data), payload.TotalCount)
+	assert.Nil(t, payload.Links.Next)
+	assert.Contains(t, recorder.Body.String(), `"links":{"next":null}`)
+	require.Contains(t, byID, "gpt-5")
+	require.Contains(t, byID, "OpenAI/GPT-5")
+	assert.Equal(t, "gpt-5", byID["gpt-5"].CanonicalSlug)
+	assert.Equal(t, "gpt-5", byID["OpenAI/GPT-5"].CanonicalSlug)
+	assert.Empty(t, byID["gpt-5"].CanonicalId)
+	assert.False(t, byID["gpt-5"].Deprecated)
+	assert.Equal(t, "gpt-5", byID["OpenAI/GPT-5"].CanonicalId)
+	assert.True(t, byID["OpenAI/GPT-5"].Deprecated)
+	assert.EqualValues(t, 2_000_000_000, byID["OpenAI/GPT-5"].RetireAfter)
+	assert.Equal(t, byID["gpt-5"].Categories, byID["OpenAI/GPT-5"].Categories)
+	assert.Equal(t, byID["gpt-5"].Description, byID["OpenAI/GPT-5"].Description)
+	assert.Equal(t, byID["gpt-5"].Architecture, byID["OpenAI/GPT-5"].Architecture)
+	assert.Equal(t, byID["gpt-5"].SupportedParameters, byID["OpenAI/GPT-5"].SupportedParameters)
+	assert.Equal(t, byID["gpt-5"].ContextLength, byID["OpenAI/GPT-5"].ContextLength)
+	assert.Equal(t, byID["gpt-5"].MaxOutputTokens, byID["OpenAI/GPT-5"].MaxOutputTokens)
+	require.NotNil(t, byID["OpenAI/GPT-5"].Architecture)
+	assert.Equal(t, "text+image+file->text", byID["OpenAI/GPT-5"].Architecture.Modality)
+	assert.Equal(t, []string{"reasoning", "reasoning_effort", "structured_outputs", "tools"}, byID["OpenAI/GPT-5"].SupportedParameters)
+	require.NotNil(t, byID["OpenAI/GPT-5"].ContextLength)
+	assert.EqualValues(t, 1_050_000, *byID["OpenAI/GPT-5"].ContextLength)
+	require.NotNil(t, byID["OpenAI/GPT-5"].MaxOutputTokens)
+	assert.EqualValues(t, 128_000, *byID["OpenAI/GPT-5"].MaxOutputTokens)
 }
 
 func TestListModelsTokenLimitIncludesTieredBillingModel(t *testing.T) {

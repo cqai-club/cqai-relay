@@ -45,6 +45,12 @@ func Distribute() func(c *gin.Context) {
 			abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorInvalidRequest, map[string]any{"Error": err.Error()}))
 			return
 		}
+		requestedModelName := modelRequest.Model
+		canonicalModelName, activeAlias := model.ResolveModelAlias(requestedModelName)
+		if activeAlias != nil {
+			common.SetContextKey(c, constant.ContextKeyRequestedModel, requestedModelName)
+			modelRequest.Model = canonicalModelName
+		}
 		if pin, found, overridden := constraints.ResolvedPin(); found {
 			for _, lost := range overridden {
 				logger.LogWarn(c, fmt.Sprintf(
@@ -92,8 +98,7 @@ func Distribute() func(c *gin.Context) {
 				if !ok {
 					tokenModelLimit = map[string]bool{}
 				}
-				matchName := ratio_setting.FormatMatchingModelName(modelRequest.Model) // match gpts & thinking-*
-				if _, ok := tokenModelLimit[matchName]; !ok {
+				if !tokenAllowsModel(tokenModelLimit, modelRequest.Model, requestedModelName) {
 					abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorTokenModelForbidden, map[string]any{"Model": modelRequest.Model}))
 					return
 				}
@@ -195,6 +200,9 @@ func Distribute() func(c *gin.Context) {
 				return
 			}
 		}
+		if activeAlias != nil {
+			model.MarkModelAliasUsed(requestedModelName)
+		}
 		common.SetContextKey(c, constant.ContextKeyRequestStartTime, time.Now())
 		SetupContextForSelectedChannel(c, channel, modelRequest.Model)
 		c.Next()
@@ -202,6 +210,20 @@ func Distribute() func(c *gin.Context) {
 			service.RecordChannelAffinity(c, channel.Id)
 		}
 	}
+}
+
+func tokenAllowsModel(limits map[string]bool, canonicalModelName string, requestedModelName string) bool {
+	candidates := []string{canonicalModelName, requestedModelName}
+	candidates = append(candidates, model.GetActiveAliasNamesForCanonical(canonicalModelName)...)
+	for _, candidate := range candidates {
+		if candidate == "" {
+			continue
+		}
+		if limits[candidate] || limits[ratio_setting.FormatMatchingModelName(candidate)] {
+			return true
+		}
+	}
+	return false
 }
 
 func channelMatchesExpectedTaskPlugin(c *gin.Context, channel *model.Channel, expected string) bool {

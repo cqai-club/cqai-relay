@@ -2,16 +2,123 @@ package middleware
 
 import (
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	taskdto "github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	relayhelper "github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
+	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
+
+func TestTokenAllowsCanonicalAndActiveAliasNames(t *testing.T) {
+	previousDB := model.DB
+	db, err := gorm.Open(sqlite.Open("file:"+strings.ReplaceAll(t.Name(), "/", "_")+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	model.DB = db
+	t.Cleanup(func() {
+		model.DB = previousDB
+		require.NoError(t, model.InitModelAliasCache())
+	})
+	require.NoError(t, db.AutoMigrate(&model.Model{}, &model.ModelAlias{}))
+	require.NoError(t, db.Create(&model.Model{
+		ModelName: "gpt-5", MetadataStatus: model.ModelMetadataStatusConfirmed,
+		MetadataSource: model.ModelMetadataSourceManual, Status: 1, SyncOfficial: 1,
+	}).Error)
+	require.NoError(t, model.CreateOrActivateModelAlias(db, "OpenAI/GPT-5", "gpt-5", model.ModelMetadataSourceBaseLLMNormalized, common.GetTimestamp()+3600))
+	require.NoError(t, model.InitModelAliasCache())
+
+	assert.True(t, tokenAllowsModel(map[string]bool{"gpt-5": true}, "gpt-5", "OpenAI/GPT-5"))
+	assert.True(t, tokenAllowsModel(map[string]bool{"OpenAI/GPT-5": true}, "gpt-5", "OpenAI/GPT-5"))
+	assert.True(t, tokenAllowsModel(map[string]bool{"OpenAI/GPT-5": true}, "gpt-5", "gpt-5"))
+	assert.False(t, tokenAllowsModel(map[string]bool{"other": true}, "gpt-5", "OpenAI/GPT-5"))
+}
+
+func TestDistributeResolvesAliasBeforeRoutingAndMapsCanonicalToUpstream(t *testing.T) {
+	setupOriginTaskDB(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.Model{}, &model.ModelAlias{}))
+	require.NoError(t, model.DB.Create(&model.Model{
+		ModelName: "gpt-5", MetadataStatus: model.ModelMetadataStatusConfirmed,
+		MetadataSource: model.ModelMetadataSourceBaseLLMExact, Status: 1, SyncOfficial: 1,
+	}).Error)
+	require.NoError(t, model.CreateOrActivateModelAlias(model.DB, "OpenAI/GPT-5", "gpt-5", model.ModelMetadataSourceBaseLLMNormalized, common.GetTimestamp()+3600))
+	require.NoError(t, model.InitModelAliasCache())
+
+	mapping := `{"gpt-5":"commandcode-gpt-5"}`
+	channel := &model.Channel{
+		Name: "canonical-channel", Key: "sk-test", Status: common.ChannelStatusEnabled,
+		Type: constant.ChannelTypeOpenAI, Models: "gpt-5", Group: "default", ModelMapping: &mapping,
+	}
+	require.NoError(t, model.DB.Create(channel).Error)
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"OpenAI/GPT-5"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("resolved_task_model", "OpenAI/GPT-5")
+	service.GetChannelConstraints(c).AddPin(taskdto.ChannelPin{
+		ChannelId: channel.Id, Source: taskdto.PinSourceOriginTask,
+		Rank: taskdto.PinRankOriginTask, RetryMode: taskdto.PinRetrySameChannel,
+	})
+
+	Distribute()(c)
+	require.False(t, c.IsAborted())
+	assert.Equal(t, "gpt-5", common.GetContextKeyString(c, constant.ContextKeyOriginalModel))
+	assert.Equal(t, "OpenAI/GPT-5", common.GetContextKeyString(c, constant.ContextKeyRequestedModel))
+	aliases := model.GetActiveModelAliases()
+	require.Len(t, aliases, 1)
+	assert.EqualValues(t, 1, aliases[0].RequestCount)
+
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "gpt-5",
+		ChannelMeta:     &relaycommon.ChannelMeta{UpstreamModelName: "gpt-5"},
+	}
+	require.NoError(t, relayhelper.ModelMappedHelper(c, info, nil))
+	assert.Equal(t, "commandcode-gpt-5", info.UpstreamModelName)
+}
+
+func TestGetModelRequestPreservesAliasAcrossRelayEntrypoints(t *testing.T) {
+	const alias = "OpenAI/GPT-5"
+	tests := []struct {
+		name string
+		path string
+		body string
+	}{
+		{name: "openai chat", path: "/v1/chat/completions", body: `{"model":"OpenAI/GPT-5"}`},
+		{name: "responses", path: "/v1/responses", body: `{"model":"OpenAI/GPT-5"}`},
+		{name: "anthropic", path: "/v1/messages", body: `{"model":"OpenAI/GPT-5"}`},
+		{name: "gemini", path: "/v1beta/models/OpenAI/GPT-5:generateContent", body: `{}`},
+		{name: "image", path: "/v1/images/generations", body: `{"model":"OpenAI/GPT-5"}`},
+		{name: "audio", path: "/v1/audio/speech", body: `{"model":"OpenAI/GPT-5"}`},
+		{name: "video", path: "/v1/videos", body: `{"model":"OpenAI/GPT-5"}`},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(recorder)
+			c.Request = httptest.NewRequest(http.MethodPost, test.path, strings.NewReader(test.body))
+			c.Request.Header.Set("Content-Type", "application/json")
+
+			request, shouldSelectChannel, err := getModelRequest(c)
+			require.NoError(t, err)
+			assert.True(t, shouldSelectChannel)
+			assert.Equal(t, alias, request.Model)
+		})
+	}
+}
 
 func TestChannelMatchesExpectedTaskPluginUsesGenericChannelSetting(t *testing.T) {
 	channel := &model.Channel{Type: constant.ChannelTypeTaskPlugin}

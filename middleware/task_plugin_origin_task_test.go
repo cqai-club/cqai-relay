@@ -37,6 +37,7 @@ func setupOriginTaskDB(t *testing.T) {
 	t.Cleanup(func() {
 		model.DB = previousDB
 		common.SetMainDatabaseType(previousType)
+		require.NoError(t, model.InitModelAliasCache())
 	})
 }
 

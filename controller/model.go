@@ -3,6 +3,7 @@ package controller
 import (
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -175,13 +176,44 @@ func buildOpenAIModel(modelName string, ownerByModel map[string]string) dto.Open
 	if owner, ok := ownerByModel[modelName]; ok && owner != "" {
 		oaiModel.OwnedBy = owner
 	}
+	oaiModel.CanonicalSlug = modelName
+	oaiModel.Name = modelName
 	metadata := model.GetModelCatalogMetadata(modelName)
 	oaiModel.Vendor = metadata.Vendor
 	oaiModel.Description = metadata.Description
 	oaiModel.Icon = metadata.Icon
 	oaiModel.Categories = metadata.Categories
+	oaiModel.Architecture = types.CloneModelArchitecture(metadata.Architecture)
+	oaiModel.SupportedParameters = append([]string(nil), metadata.SupportedParameters...)
+	if metadata.ContextLength > 0 {
+		contextLength := metadata.ContextLength
+		oaiModel.ContextLength = &contextLength
+	}
+	if metadata.MaxOutputTokens > 0 {
+		maxOutputTokens := metadata.MaxOutputTokens
+		oaiModel.MaxOutputTokens = &maxOutputTokens
+	}
 	oaiModel.SupportedEndpointTypes = model.GetModelSupportEndpointTypes(modelName)
 	return oaiModel
+}
+
+func buildOpenAIModelAlias(alias model.ModelAlias, ownerByModel map[string]string) dto.OpenAIModels {
+	item := buildOpenAIModel(alias.CanonicalModelName, ownerByModel)
+	item.Id = alias.AliasName
+	item.CanonicalId = alias.CanonicalModelName
+	item.Deprecated = true
+	item.RetireAfter = alias.RetireAfter
+	return item
+}
+
+func modelAllowedByTokenLimits(tokenModelLimit map[string]bool, canonicalModelName string) bool {
+	candidates := append([]string{canonicalModelName}, model.GetActiveAliasNamesForCanonical(canonicalModelName)...)
+	for _, candidate := range candidates {
+		if tokenModelLimit[candidate] || tokenModelLimit[ratio_setting.FormatMatchingModelName(candidate)] {
+			return true
+		}
+	}
+	return false
 }
 
 type modelListGroups struct {
@@ -255,11 +287,8 @@ func ListModels(c *gin.Context, modelType int) {
 	}
 	models := service.GetGroupsEnabledModels(ownerGroups)
 	for _, modelName := range models {
-		if modelLimitEnable {
-			matchingName := ratio_setting.FormatMatchingModelName(modelName)
-			if !tokenModelLimit[modelName] && !tokenModelLimit[matchingName] {
-				continue
-			}
+		if modelLimitEnable && !modelAllowedByTokenLimits(tokenModelLimit, modelName) {
+			continue
 		}
 		if !acceptUnsetRatioModel && !helper.HasModelBillingConfig(modelName) {
 			continue
@@ -272,8 +301,18 @@ func ListModels(c *gin.Context, modelType int) {
 		ownerByModel = getPreferredModelOwners(userModelNames, ownerGroups)
 	}
 	userOpenAiModels := make([]dto.OpenAIModels, 0, len(userModelNames))
+	visibleModels := make(map[string]struct{}, len(userModelNames))
 	for _, modelName := range userModelNames {
+		visibleModels[modelName] = struct{}{}
 		userOpenAiModels = append(userOpenAiModels, buildOpenAIModel(modelName, ownerByModel))
+	}
+	aliases := model.GetActiveModelAliases()
+	sort.Slice(aliases, func(i, j int) bool { return aliases[i].AliasName < aliases[j].AliasName })
+	for _, alias := range aliases {
+		if _, ok := visibleModels[alias.CanonicalModelName]; !ok {
+			continue
+		}
+		userOpenAiModels = append(userOpenAiModels, buildOpenAIModelAlias(alias, ownerByModel))
 	}
 
 	switch modelType {
@@ -313,9 +352,11 @@ func ListModels(c *gin.Context, modelType int) {
 		})
 	default:
 		c.JSON(200, gin.H{
-			"success": true,
-			"data":    userOpenAiModels,
-			"object":  "list",
+			"success":     true,
+			"data":        userOpenAiModels,
+			"object":      "list",
+			"total_count": len(userOpenAiModels),
+			"links":       gin.H{"next": nil},
 		})
 	}
 }
@@ -352,7 +393,20 @@ func EnabledListModels(c *gin.Context) {
 
 func RetrieveModel(c *gin.Context, modelType int) {
 	modelId := c.Param("model")
-	if aiModel, ok := openAIModelsMap[modelId]; ok {
+	canonicalModel, alias := model.ResolveModelAlias(modelId)
+	_, staticModel := openAIModelsMap[canonicalModel]
+	enabledModel := false
+	for _, name := range model.GetEnabledModels() {
+		if name == canonicalModel {
+			enabledModel = true
+			break
+		}
+	}
+	if staticModel || enabledModel {
+		aiModel := buildOpenAIModel(canonicalModel, nil)
+		if alias != nil {
+			aiModel = buildOpenAIModelAlias(*alias, nil)
+		}
 		switch modelType {
 		case constant.ChannelTypeAnthropic:
 			c.JSON(200, dto.AnthropicModel{

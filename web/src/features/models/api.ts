@@ -36,6 +36,9 @@ import type {
   SyncOverwritePayload,
   DeploymentSettingsResponse,
   ListDeploymentsResponse,
+  ModelReconcilePreviewResponse,
+  ModelAliasesResponse,
+  ModelReconcileMatch,
 } from './types'
 
 // ============================================================================
@@ -87,6 +90,16 @@ export async function updateModel(
   data: Partial<Model> & { id: number }
 ): Promise<{ success: boolean; message?: string; data?: Model }> {
   const res = await api.put('/api/models/', data)
+  return res.data
+}
+
+/**
+ * Remove a manual metadata override and queue the model for catalog recognition.
+ */
+export async function restoreModelAutoRecognition(
+  id: number
+): Promise<{ success: boolean; message?: string; data?: Model }> {
+  const res = await api.post(`/api/models/${id}/restore_auto`)
   return res.data
 }
 
@@ -236,6 +249,51 @@ export async function applyUpstreamOverwrite(params: {
  */
 export async function getMissingModels(): Promise<MissingModelsResponse> {
   const res = await api.get('/api/models/missing')
+  return res.data
+}
+
+export async function previewModelReconcile(params?: {
+  locale?: SyncLocale
+  channel_id?: number
+}): Promise<ModelReconcilePreviewResponse> {
+  const res = await api.get('/api/models/reconcile/preview', { params })
+  return res.data
+}
+
+export async function applyModelReconcile(params: {
+  items: Array<
+    Pick<
+      ModelReconcileMatch,
+      'channel_id' | 'upstream_model' | 'canonical_model'
+    >
+  >
+  locale?: SyncLocale
+}): Promise<{
+  success: boolean
+  message?: string
+  data?: Record<string, number>
+}> {
+  const res = await api.post('/api/models/reconcile/apply', params)
+  return res.data
+}
+
+export async function getModelAliases(
+  status?: 'active' | 'expired' | 'retired' | 'all'
+): Promise<ModelAliasesResponse> {
+  const res = await api.get('/api/models/aliases', {
+    params: status ? { status } : undefined,
+  })
+  return res.data
+}
+
+export async function retireModelAliases(aliasNames: string[]): Promise<{
+  success: boolean
+  message?: string
+  data?: { migrated_tokens: number; retired_aliases: number }
+}> {
+  const res = await api.post('/api/models/aliases/retire', {
+    alias_names: aliasNames,
+  })
   return res.data
 }
 

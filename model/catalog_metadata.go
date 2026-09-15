@@ -9,10 +9,14 @@ import (
 // ModelCatalogMetadata contains non-sensitive metadata exposed with a user
 // visible model list.
 type ModelCatalogMetadata struct {
-	Description string
-	Icon        string
-	Vendor      string
-	Categories  []types.ModelCategory
+	Description         string
+	Icon                string
+	Vendor              string
+	Categories          []types.ModelCategory
+	Architecture        *types.ModelArchitecture
+	SupportedParameters []string
+	ContextLength       int64
+	MaxOutputTokens     int64
 }
 
 var (
@@ -32,6 +36,8 @@ func GetModelCatalogMetadata(modelName string) ModelCatalogMetadata {
 		return ModelCatalogMetadata{Categories: CatalogModelCategories(nil)}
 	}
 	metadata.Categories = append([]types.ModelCategory(nil), metadata.Categories...)
+	metadata.Architecture = types.CloneModelArchitecture(metadata.Architecture)
+	metadata.SupportedParameters = append([]string(nil), metadata.SupportedParameters...)
 	return metadata
 }
 

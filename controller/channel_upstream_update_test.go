@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -415,6 +416,70 @@ func TestFetchNewAPIModelsUsesOpenAIContract(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, []string{"gpt-5", "gpt-5-mini"}, models)
+}
+
+func TestFetchOpenRouterModelsRequestsAllOutputsAndKeepsStructuredMetadata(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/v1/models", r.URL.Path)
+		assert.Equal(t, "all", r.URL.Query().Get("output_modalities"))
+		assert.Equal(t, "Bearer openrouter-key", r.Header.Get("Authorization"))
+		_, err := w.Write([]byte(`{"data":[{"id":"vendor/vision-model","description":"vision","architecture":{"modality":"text+image->text","input_modalities":["text","image"],"output_modalities":["text"]},"supported_parameters":["tools","reasoning"],"context_length":128000,"top_provider":{"max_completion_tokens":8192}}]}`))
+		assert.NoError(t, err)
+	}))
+	t.Cleanup(server.Close)
+
+	baseURL := server.URL
+	channel := &model.Channel{Type: constant.ChannelTypeOpenRouter, Key: "openrouter-key", BaseURL: &baseURL}
+	catalog, err := fetchChannelUpstreamModels(channel)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"vendor/vision-model"}, catalog.IDs)
+	require.Contains(t, catalog.Metadata, "vendor/vision-model")
+	metadata := catalog.Metadata["vendor/vision-model"]
+	require.NotNil(t, metadata.Architecture)
+	assert.Equal(t, []string{"text", "image"}, metadata.Architecture.InputModalities)
+	assert.Equal(t, []string{"text"}, metadata.Architecture.OutputModalities)
+	assert.Equal(t, []string{"tools", "reasoning"}, metadata.SupportedParameters)
+	assert.EqualValues(t, 128000, metadata.ContextLength)
+	assert.EqualValues(t, 8192, metadata.MaxOutputTokens)
+}
+
+func TestPersistChannelStructuredMetadataUsesCanonicalMappingAndProtectsManualRows(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	mapping := `{"canonical-model":"vendor/upstream-model","manual-model":"vendor/manual-model"}`
+	channel := &model.Channel{Id: 880, Type: constant.ChannelTypeOpenRouter, Models: "canonical-model,manual-model", ModelMapping: &mapping}
+	require.NoError(t, db.Create(&[]model.Model{
+		{ModelName: "canonical-model", Capabilities: []types.ModelCategory{types.ModelCategoryOther}, MetadataStatus: model.ModelMetadataStatusPending, MetadataSource: model.ModelMetadataSourceChannel, Status: 1, SyncOfficial: 1},
+		{ModelName: "manual-model", InputModalities: []string{"text"}, OutputModalities: []string{"text"}, Capabilities: []types.ModelCategory{types.ModelCategoryText}, MetadataStatus: model.ModelMetadataStatusConfirmed, MetadataSource: model.ModelMetadataSourceManual, Status: 1, SyncOfficial: 0},
+	}).Error)
+
+	updated, err := persistChannelStructuredMetadata(channel, channelUpstreamModelCatalog{Metadata: map[string]OpenAIModel{
+		"vendor/upstream-model": {
+			ID: "vendor/upstream-model", Description: "from upstream",
+			Architecture:        &types.ModelArchitecture{InputModalities: []string{"text", "image"}, OutputModalities: []string{"text"}},
+			SupportedParameters: []string{"tools"}, ContextLength: 64000, MaxOutputTokens: 4096,
+		},
+		"vendor/manual-model": {
+			ID: "vendor/manual-model", Description: "must not replace",
+			Architecture: &types.ModelArchitecture{InputModalities: []string{"text", "audio"}, OutputModalities: []string{"text"}},
+		},
+	}})
+	require.NoError(t, err)
+	assert.True(t, updated)
+
+	var canonical model.Model
+	require.NoError(t, db.Where("model_name = ?", "canonical-model").First(&canonical).Error)
+	assert.Equal(t, "from upstream", canonical.Description)
+	assert.Equal(t, []string{"text", "image"}, canonical.InputModalities)
+	assert.Equal(t, []string{"text"}, canonical.OutputModalities)
+	assert.Equal(t, []string{"tools"}, canonical.SupportedParameters)
+	assert.Equal(t, []types.ModelCategory{types.ModelCategoryTextMultimodal}, canonical.Capabilities)
+	assert.Equal(t, model.ModelMetadataStatusConfirmed, canonical.MetadataStatus)
+	assert.Equal(t, model.ModelMetadataSourceChannel, canonical.MetadataSource)
+
+	var manual model.Model
+	require.NoError(t, db.Where("model_name = ?", "manual-model").First(&manual).Error)
+	assert.Empty(t, manual.Description)
+	assert.Equal(t, []string{"text"}, manual.InputModalities)
 }
 
 func TestNormalizeModelNames(t *testing.T) {

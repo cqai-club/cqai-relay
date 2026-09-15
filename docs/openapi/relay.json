@@ -2406,12 +2406,116 @@
             "type": "string",
             "description": "模型所有者",
             "example": "openai"
+          },
+          "canonical_slug": {
+            "type": "string",
+            "description": "Relay 内部用于路由、权限和计费的标准模型 ID",
+            "example": "gpt-4"
+          },
+          "name": {
+            "type": "string",
+            "description": "模型显示名称",
+            "example": "gpt-4"
+          },
+          "vendor": {
+            "type": "string",
+            "description": "目录供应商名称"
+          },
+          "description": {
+            "type": "string",
+            "description": "模型目录描述"
+          },
+          "icon": {
+            "type": "string",
+            "description": "模型或供应商图标标识"
+          },
+          "architecture": {
+            "type": "object",
+            "nullable": true,
+            "description": "OpenRouter 风格输入与输出模态；null 表示未知",
+            "properties": {
+              "modality": {
+                "type": "string",
+                "example": "text+image->text"
+              },
+              "input_modalities": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "output_modalities": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "supported_parameters": {
+            "type": "array",
+            "nullable": true,
+            "description": "目录明确声明支持的请求参数；null 表示未知",
+            "items": {
+              "type": "string"
+            }
+          },
+          "context_length": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "上下文窗口；null 表示未知"
+          },
+          "max_output_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "最大输出 Token 数；null 表示未知"
+          },
+          "categories": {
+            "type": "array",
+            "description": "由结构化模态派生的兼容分类",
+            "items": {
+              "type": "string",
+              "enum": [
+                "image",
+                "video",
+                "text",
+                "text-multimodal",
+                "audio",
+                "other"
+              ]
+            }
+          },
+          "supported_endpoint_types": {
+            "type": "array",
+            "description": "当前配置声明可调用的 Relay 端点类型",
+            "items": {
+              "type": "string"
+            }
+          },
+          "canonical_id": {
+            "type": "string",
+            "description": "兼容别名对应的标准模型 ID；标准模型不返回此字段"
+          },
+          "deprecated": {
+            "type": "boolean",
+            "description": "是否为待退出的兼容别名"
+          },
+          "retire_after": {
+            "type": "integer",
+            "format": "int64",
+            "description": "兼容别名建议停用时间（Unix 秒）；到期不会自动停用"
           }
         }
       },
       "ModelsResponse": {
         "type": "object",
         "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
           "object": {
             "type": "string",
             "example": "list"
@@ -2420,6 +2524,20 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Model"
+            }
+          },
+          "total_count": {
+            "type": "integer",
+            "description": "当前响应中的模型数量"
+          },
+          "links": {
+            "type": "object",
+            "properties": {
+              "next": {
+                "type": "string",
+                "nullable": true,
+                "description": "保留的下一页链接；当前固定为 null"
+              }
             }
           }
         }

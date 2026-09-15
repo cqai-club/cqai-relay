@@ -237,6 +237,58 @@ export function useModelsColumns(vendors: Vendor[] = []): ColumnDef<Model>[] {
 
     // Vendor column
     {
+      accessorKey: 'metadata_status',
+      header: t('Identification status'),
+      meta: { mobileBadge: true },
+      cell: ({ row }) => {
+        const status = row.getValue('metadata_status') as
+          | 'pending'
+          | 'confirmed'
+        return (
+          <StatusBadge
+            variant={status === 'confirmed' ? 'success' : 'warning'}
+            size='sm'
+            copyable={false}
+            className='-ml-1.5 max-w-none shrink-0'
+          >
+            {status === 'confirmed'
+              ? t('Confirmed')
+              : t('Pending identification')}
+          </StatusBadge>
+        )
+      },
+      size: 140,
+      enableSorting: false,
+    },
+
+    {
+      accessorKey: 'metadata_source',
+      header: t('Metadata source'),
+      meta: { mobileHidden: true },
+      cell: ({ row }) => {
+        const source = row.getValue('metadata_source') as string
+        const labels: Record<string, string> = {
+          manual: t('Manual'),
+          basellm_exact: t('BaseLLM exact match'),
+          basellm_normalized: t('BaseLLM normalized match'),
+          channel: t('Channel discovery'),
+          migration: t('Migration'),
+        }
+        return (
+          <StatusBadge
+            label={labels[source] || source || '-'}
+            variant='neutral'
+            size='sm'
+            copyable={false}
+          />
+        )
+      },
+      size: 180,
+      enableSorting: false,
+    },
+
+    // Vendor column
+    {
       accessorKey: 'vendor_id',
       header: t('Vendor'),
       cell: ({ row }) => {

@@ -28,6 +28,15 @@ import { parseModelTags as parseTagsFromUtils } from './model-utils'
 /**
  * Model form validation schema
  */
+export const modelCatalogLimitSchema = z
+  .string()
+  .refine(
+    (value) =>
+      value === '' ||
+      (/^\d+$/.test(value) && Number.isSafeInteger(Number(value))),
+    'Enter a non-negative whole number'
+  )
+
 export const modelFormSchema = z.object({
   id: z.number().optional(),
   model_name: z.string().min(1, 'Model name is required'),
@@ -36,11 +45,11 @@ export const modelFormSchema = z.object({
   tags: z.array(z.string()).default([]),
   vendor_id: z.number().optional(),
   endpoints: z.string().default(''),
-  capabilities: z
-    .array(
-      z.enum(['image', 'video', 'text', 'text-multimodal', 'audio', 'other'])
-    )
-    .default([]),
+  input_modalities: z.array(z.string()).default([]),
+  output_modalities: z.array(z.string()).default([]),
+  supported_parameters: z.array(z.string()).default([]),
+  context_length: modelCatalogLimitSchema.default(''),
+  max_output_tokens: modelCatalogLimitSchema.default(''),
   name_rule: z.number().min(0).max(3).default(0),
   status: z.boolean().default(true),
   sync_official: z.boolean().default(true),
@@ -83,7 +92,11 @@ export function transformModelToFormDefaults(model: Model): ModelFormValues {
     tags: parseTagsFromUtils(model.tags),
     vendor_id: model.vendor_id,
     endpoints: model.endpoints || '',
-    capabilities: model.capabilities || [],
+    input_modalities: model.input_modalities || [],
+    output_modalities: model.output_modalities || [],
+    supported_parameters: model.supported_parameters || [],
+    context_length: formatModelCatalogLimit(model.context_length),
+    max_output_tokens: formatModelCatalogLimit(model.max_output_tokens),
     name_rule: model.name_rule || 0,
     status: model.status === 1,
     sync_official: model.sync_official === 1,
@@ -106,7 +119,13 @@ export function transformFormDataToModelPayload(
     tags: formatTagsArray(formData.tags),
     vendor_id: formData.vendor_id,
     endpoints: formData.endpoints || '',
-    capabilities: formData.capabilities,
+    input_modalities: normalizeModelCatalogItems(formData.input_modalities),
+    output_modalities: normalizeModelCatalogItems(formData.output_modalities),
+    supported_parameters: normalizeModelCatalogItems(
+      formData.supported_parameters
+    ),
+    context_length: parseModelCatalogLimit(formData.context_length),
+    max_output_tokens: parseModelCatalogLimit(formData.max_output_tokens),
     name_rule: formData.name_rule,
     status: formData.status ? 1 : 0,
     sync_official: formData.sync_official ? 1 : 0,
@@ -124,6 +143,30 @@ export function transformFormDataToModelPayload(
  */
 export function formatTagsArray(tags: string[]): string {
   return tags.filter(Boolean).join(',')
+}
+
+export function formatModelCatalogLimit(value?: number): string {
+  if (!value || value <= 0) return ''
+  return String(value)
+}
+
+export function parseModelCatalogLimit(value: string): number {
+  if (value === '') return 0
+  return Number(value)
+}
+
+export function normalizeModelCatalogItems(items: string[]): string[] {
+  const normalized: string[] = []
+  const seen = new Set<string>()
+
+  for (const item of items) {
+    const value = item.trim().toLowerCase()
+    if (!value || seen.has(value)) continue
+    seen.add(value)
+    normalized.push(value)
+  }
+
+  return normalized
 }
 
 /**

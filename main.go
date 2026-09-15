@@ -103,6 +103,8 @@ func main() {
 		}()
 
 		go model.SyncChannelCache(common.SyncFrequency)
+	} else {
+		go model.SyncModelAliasCache(common.SyncFrequency)
 	}
 
 	// Warm pricing after channel cache initialization so Advanced Custom
@@ -312,6 +314,10 @@ func InitResources() error {
 	err = model.InitDB()
 	if err != nil {
 		common.FatalLog("failed to initialize database: " + err.Error())
+		return err
+	}
+	if err = model.InitModelAliasCache(); err != nil {
+		common.FatalLog("failed to initialize model aliases: " + err.Error())
 		return err
 	}
 	if err = authz.Init(model.DB); err != nil {

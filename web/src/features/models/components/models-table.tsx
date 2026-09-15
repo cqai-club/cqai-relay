@@ -29,6 +29,8 @@ import { getModels, searchModels, getVendors } from '../api'
 import {
   DEFAULT_PAGE_SIZE,
   getModelStatusOptions,
+  getMetadataSourceOptions,
+  getMetadataStatusOptions,
   getSyncStatusOptions,
 } from '../constants'
 import { modelsQueryKeys, vendorsQueryKeys } from '../lib'
@@ -64,6 +66,16 @@ export function ModelsTable() {
       { columnId: 'status', searchKey: 'status', type: 'array' },
       { columnId: 'vendor_id', searchKey: 'vendor', type: 'array' },
       { columnId: 'sync_official', searchKey: 'sync', type: 'array' },
+      {
+        columnId: 'metadata_status',
+        searchKey: 'metadata_status',
+        type: 'array',
+      },
+      {
+        columnId: 'metadata_source',
+        searchKey: 'metadata_source',
+        type: 'array',
+      },
     ],
   })
 
@@ -75,6 +87,12 @@ export function ModelsTable() {
   const syncFilter =
     (columnFilters.find((f) => f.id === 'sync_official')?.value as string[]) ||
     []
+  const metadataStatusFilter =
+    (columnFilters.find((f) => f.id === 'metadata_status')
+      ?.value as string[]) || []
+  const metadataSourceFilter =
+    (columnFilters.find((f) => f.id === 'metadata_source')
+      ?.value as string[]) || []
 
   // Fetch vendors for filter
   const { data: vendorsData } = useQuery({
@@ -109,13 +127,23 @@ export function ModelsTable() {
     syncFilter.length > 0 && !syncFilter.includes('all')
       ? syncFilter[0]
       : undefined
+  const metadataStatusFilterValue =
+    metadataStatusFilter.length > 0 && !metadataStatusFilter.includes('all')
+      ? metadataStatusFilter[0]
+      : undefined
+  const metadataSourceFilterValue =
+    metadataSourceFilter.length > 0 && !metadataSourceFilter.includes('all')
+      ? metadataSourceFilter[0]
+      : undefined
 
   // Use search API whenever any filter is active so status/sync are applied server-side
   const shouldSearch = Boolean(
     globalFilter?.trim() ||
     activeVendorFilter ||
     statusFilterValue ||
-    syncFilterValue
+    syncFilterValue ||
+    metadataStatusFilterValue ||
+    metadataSourceFilterValue
   )
 
   // Fetch models data
@@ -126,6 +154,8 @@ export function ModelsTable() {
       vendor: activeVendorFilter,
       status: statusFilterValue,
       sync_official: syncFilterValue,
+      metadata_status: metadataStatusFilterValue,
+      metadata_source: metadataSourceFilterValue,
       p: pagination.pageIndex + 1,
       page_size: pagination.pageSize,
     }),
@@ -136,6 +166,8 @@ export function ModelsTable() {
           vendor: activeVendorFilter,
           status: statusFilterValue,
           sync_official: syncFilterValue,
+          metadata_status: metadataStatusFilterValue,
+          metadata_source: metadataSourceFilterValue,
           p: pagination.pageIndex + 1,
           page_size: pagination.pageSize,
         })
@@ -220,6 +252,18 @@ export function ModelsTable() {
             columnId: 'sync_official',
             title: t('Official Sync'),
             options: [...getSyncStatusOptions(t)],
+            singleSelect: true,
+          },
+          {
+            columnId: 'metadata_status',
+            title: t('Identification status'),
+            options: [...getMetadataStatusOptions(t)],
+            singleSelect: true,
+          },
+          {
+            columnId: 'metadata_source',
+            title: t('Metadata source'),
+            options: [...getMetadataSourceOptions(t)],
             singleSelect: true,
           },
         ],

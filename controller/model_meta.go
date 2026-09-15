@@ -1,7 +1,7 @@
 package controller
 
 import (
-	"encoding/json"
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -13,13 +13,35 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func prepareManualModelMetadata(item *model.Model) error {
+	if item.ContextLength < 0 {
+		return fmt.Errorf("context_length cannot be negative")
+	}
+	if item.MaxOutputTokens < 0 {
+		return fmt.Errorf("max_output_tokens cannot be negative")
+	}
+	if err := model.ValidateModelCategories(item.Capabilities); err != nil {
+		return err
+	}
+	item.NormalizeStructuredMetadata()
+	if item.HasStructuredMetadata() || len(item.Capabilities) > 0 {
+		item.MetadataStatus = model.ModelMetadataStatusConfirmed
+	} else {
+		item.MetadataStatus = model.ModelMetadataStatusPending
+	}
+	item.MetadataSource = model.ModelMetadataSourceManual
+	return nil
+}
+
 // GetAllModelsMeta 获取模型列表（分页）
 func GetAllModelsMeta(c *gin.Context) {
 
 	pageInfo := common.GetPageQuery(c)
 	status := c.Query("status")
 	syncOfficial := c.Query("sync_official")
-	modelsMeta, total, err := model.SearchModels("", "", status, syncOfficial, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
+	metadataStatus := c.Query("metadata_status")
+	metadataSource := c.Query("metadata_source")
+	modelsMeta, total, err := model.SearchModels("", "", status, syncOfficial, metadataStatus, metadataSource, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -48,9 +70,11 @@ func SearchModelsMeta(c *gin.Context) {
 	vendor := c.Query("vendor")
 	status := c.Query("status")
 	syncOfficial := c.Query("sync_official")
+	metadataStatus := c.Query("metadata_status")
+	metadataSource := c.Query("metadata_source")
 	pageInfo := common.GetPageQuery(c)
 
-	modelsMeta, total, err := model.SearchModels(keyword, vendor, status, syncOfficial, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
+	modelsMeta, total, err := model.SearchModels(keyword, vendor, status, syncOfficial, metadataStatus, metadataSource, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -93,11 +117,10 @@ func CreateModelMeta(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	if err := model.ValidateModelCategories(m.Capabilities); err != nil {
+	if err := prepareManualModelMetadata(&m); err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	m.Capabilities = model.NormalizeModelCategories(m.Capabilities)
 	if m.ModelName == "" {
 		common.ApiErrorMsg(c, "模型名称不能为空")
 		return
@@ -128,11 +151,10 @@ func UpdateModelMeta(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	if err := model.ValidateModelCategories(m.Capabilities); err != nil {
+	if err := prepareManualModelMetadata(&m); err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	m.Capabilities = model.NormalizeModelCategories(m.Capabilities)
 	if m.Id == 0 {
 		common.ApiErrorMsg(c, "缺少模型 ID")
 		return
@@ -145,6 +167,22 @@ func UpdateModelMeta(c *gin.Context) {
 			return
 		}
 	} else {
+		var existing model.Model
+		if err := model.DB.Select("id", "model_name").First(&existing, m.Id).Error; err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		if existing.ModelName != m.ModelName {
+			hasAliases, err := model.ModelHasActiveAliases(existing.ModelName)
+			if err != nil {
+				common.ApiError(c, err)
+				return
+			}
+			if hasAliases {
+				common.ApiErrorMsg(c, "模型存在兼容别名，不能直接改名")
+				return
+			}
+		}
 		// 名称冲突检查
 		if dup, err := model.IsModelNameDuplicated(m.Id, m.ModelName); err != nil {
 			common.ApiError(c, err)
@@ -163,6 +201,40 @@ func UpdateModelMeta(c *gin.Context) {
 	common.ApiSuccess(c, &m)
 }
 
+// RestoreModelMetadataAuto returns one manually managed record to automatic
+// catalog reconciliation without performing network I/O or discarding the
+// last known metadata.
+func RestoreModelMetadataAuto(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil || id <= 0 {
+		common.ApiErrorMsg(c, "invalid model id")
+		return
+	}
+	updates := map[string]interface{}{
+		"sync_official":   1,
+		"metadata_status": model.ModelMetadataStatusPending,
+		"metadata_source": model.ModelMetadataSourceChannel,
+		"updated_time":    common.GetTimestamp(),
+	}
+	result := model.DB.Model(&model.Model{}).Where("id = ?", id).Updates(updates)
+	if result.Error != nil {
+		common.ApiError(c, result.Error)
+		return
+	}
+	if result.RowsAffected == 0 {
+		common.ApiErrorMsg(c, "model not found")
+		return
+	}
+	var item model.Model
+	if err := model.DB.First(&item, id).Error; err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	enrichModels([]*model.Model{&item})
+	model.InvalidatePricingCache()
+	common.ApiSuccess(c, &item)
+}
+
 // DeleteModelMeta 删除模型
 func DeleteModelMeta(c *gin.Context) {
 	idStr := c.Param("id")
@@ -171,7 +243,21 @@ func DeleteModelMeta(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	if err := model.DB.Delete(&model.Model{}, id).Error; err != nil {
+	var existing model.Model
+	if err := model.DB.Select("id", "model_name").First(&existing, id).Error; err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	hasAliases, err := model.ModelHasActiveAliases(existing.ModelName)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if hasAliases {
+		common.ApiErrorMsg(c, "模型存在兼容别名，不能直接删除")
+		return
+	}
+	if err := model.DB.Delete(&existing).Error; err != nil {
 		common.ApiError(c, err)
 		return
 	}
@@ -211,7 +297,7 @@ func enrichModels(models []*model.Model) {
 			mm := models[idx]
 			if mm.Endpoints == "" {
 				eps := model.GetModelSupportEndpointTypes(mm.ModelName)
-				if b, err := json.Marshal(eps); err == nil {
+				if b, err := common.Marshal(eps); err == nil {
 					mm.Endpoints = string(b)
 				}
 			}
@@ -301,7 +387,7 @@ func enrichModels(models []*model.Model) {
 			for et := range es {
 				eps = append(eps, et)
 			}
-			if b, err := json.Marshal(eps); err == nil {
+			if b, err := common.Marshal(eps); err == nil {
 				mm.Endpoints = string(b)
 			}
 		}

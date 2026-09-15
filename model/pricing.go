@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	relaytypes "github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
@@ -19,6 +20,8 @@ import (
 
 type Pricing struct {
 	ModelName              string                               `json:"model_name"`
+	CanonicalSlug          string                               `json:"canonical_slug"`
+	Name                   string                               `json:"name"`
 	Description            string                               `json:"description,omitempty"`
 	Icon                   string                               `json:"icon,omitempty"`
 	Tags                   string                               `json:"tags,omitempty"`
@@ -35,6 +38,11 @@ type Pricing struct {
 	AudioCompletionRatio   *float64                             `json:"audio_completion_ratio,omitempty"`
 	EnableGroup            []string                             `json:"enable_groups"`
 	SupportedEndpointTypes []constant.EndpointType              `json:"supported_endpoint_types"`
+	Architecture           *relaytypes.ModelArchitecture        `json:"architecture"`
+	SupportedParameters    []string                             `json:"supported_parameters"`
+	ContextLength          *int64                               `json:"context_length"`
+	MaxOutputTokens        *int64                               `json:"max_output_tokens"`
+	Categories             []relaytypes.ModelCategory           `json:"categories"`
 	BillingMode            string                               `json:"billing_mode,omitempty"`
 	BillingExpr            string                               `json:"billing_expr,omitempty"`
 	BillingUsageSchema     map[string]jsplugin.UsageFieldSchema `json:"billing_usage_schema,omitempty"`
@@ -365,6 +373,8 @@ func updatePricing() {
 	for model, groups := range modelGroupsMap {
 		pricing := Pricing{
 			ModelName:              model,
+			CanonicalSlug:          model,
+			Name:                   model,
 			EnableGroup:            groups.Items(),
 			SupportedEndpointTypes: modelSupportEndpointTypes[model],
 		}
@@ -386,9 +396,33 @@ func updatePricing() {
 			catalogMetadata.Description = meta.Description
 			catalogMetadata.Icon = meta.Icon
 			catalogMetadata.Categories = CatalogModelCategories(meta.Capabilities)
+			catalogMetadata.Architecture = ModelArchitecture(meta.InputModalities, meta.OutputModalities)
+			catalogMetadata.SupportedParameters = append([]string(nil), meta.SupportedParameters...)
+			catalogMetadata.ContextLength = meta.ContextLength
+			catalogMetadata.MaxOutputTokens = meta.MaxOutputTokens
+			cachedCategories := CatalogModelCategories(meta.Capabilities)
+			cachedSpecialized := len(cachedCategories) == 1 && cachedCategories[0] == relaytypes.ModelCategoryOther
+			if catalogMetadata.Architecture != nil && !cachedSpecialized {
+				catalogMetadata.Categories = DeriveModelCategories(
+					catalogMetadata.Architecture.InputModalities,
+					catalogMetadata.Architecture.OutputModalities,
+					modelSupportEndpointTypes[model],
+				)
+			}
 			if vendor := vendorMap[meta.VendorID]; vendor != nil {
 				catalogMetadata.Vendor = vendor.Name
 			}
+		}
+		pricing.Architecture = relaytypes.CloneModelArchitecture(catalogMetadata.Architecture)
+		pricing.SupportedParameters = append([]string(nil), catalogMetadata.SupportedParameters...)
+		pricing.Categories = append([]relaytypes.ModelCategory(nil), catalogMetadata.Categories...)
+		if catalogMetadata.ContextLength > 0 {
+			value := catalogMetadata.ContextLength
+			pricing.ContextLength = &value
+		}
+		if catalogMetadata.MaxOutputTokens > 0 {
+			value := catalogMetadata.MaxOutputTokens
+			pricing.MaxOutputTokens = &value
 		}
 		modelCatalogMetadata[model] = catalogMetadata
 		modelPrice, findPrice := ratio_setting.GetModelPrice(model, false)
