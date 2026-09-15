@@ -18,6 +18,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel/ollama"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	relaytypes "github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/service/authz"
 
@@ -26,10 +27,18 @@ import (
 )
 
 type OpenAIModel struct {
-	ID         string         `json:"id"`
-	Object     string         `json:"object"`
-	Created    int64          `json:"created"`
-	OwnedBy    string         `json:"owned_by"`
+	ID                  string                        `json:"id"`
+	Object              string                        `json:"object"`
+	Created             int64                         `json:"created"`
+	OwnedBy             string                        `json:"owned_by"`
+	Description         string                        `json:"description,omitempty"`
+	Architecture        *relaytypes.ModelArchitecture `json:"architecture,omitempty"`
+	SupportedParameters []string                      `json:"supported_parameters,omitempty"`
+	ContextLength       int64                         `json:"context_length,omitempty"`
+	MaxOutputTokens     int64                         `json:"max_output_tokens,omitempty"`
+	TopProvider         struct {
+		MaxCompletionTokens int64 `json:"max_completion_tokens"`
+	} `json:"top_provider,omitempty"`
 	Metadata   map[string]any `json:"metadata,omitempty"`
 	Permission []struct {
 		ID                 string `json:"id"`

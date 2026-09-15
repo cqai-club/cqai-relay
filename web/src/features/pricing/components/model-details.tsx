@@ -61,6 +61,12 @@ import { cn } from '@/lib/utils'
 import { DEFAULT_TOKEN_UNIT } from '../constants'
 import { usePricingData } from '../hooks/use-pricing-data'
 import {
+  getCatalogCategories,
+  getCatalogInputModalities,
+  getCatalogOutputModalities,
+  getCatalogSupportedParameters,
+} from '../lib/catalog-metadata'
+import {
   formatTaskUsageUnitPrice,
   getDynamicPriceEntries,
   getDynamicPriceUnitLabelKey,
@@ -80,12 +86,7 @@ import {
   getTaskNumberFields,
 } from '../lib/task-expr'
 import { getTaskMatrixDisplayTiers } from '../lib/task-matrix-display'
-import type {
-  ModelCapability,
-  PriceType,
-  PricingModel,
-  TokenUnit,
-} from '../types'
+import type { PriceType, PricingModel, TokenUnit } from '../types'
 import { DynamicPricingBreakdown } from './dynamic-pricing-breakdown'
 import { ModelBillingModeBadge } from './model-billing-mode-badge'
 import { ModelDetailsApi } from './model-details-api'
@@ -155,21 +156,6 @@ function UnconfiguredTaskPricingNotice(props: { model: PricingModel }) {
       ) : null}
     </div>
   )
-}
-
-const CAPABILITY_LABEL_KEYS: Record<ModelCapability, string> = {
-  function_calling: 'Function calling',
-  streaming: 'Streaming',
-  vision: 'Vision',
-  json_mode: 'JSON mode',
-  structured_output: 'Structured output',
-  reasoning: 'Reasoning',
-  tools: 'Tools',
-  system_prompt: 'System prompt',
-  web_search: 'Web search',
-  code_interpreter: 'Code interpreter',
-  caching: 'Prompt caching',
-  embeddings: 'Embeddings',
 }
 
 const MODALITY_LABEL_KEYS: Record<string, string> = {
@@ -347,8 +333,8 @@ function ModalityLabels(props: { items: string[] }) {
 function ModelBackendQuickStats(props: { model: PricingModel }) {
   const { t } = useTranslation()
   const model = props.model
-  const inputModalities = normalizeCatalogItems(model.input_modalities)
-  const outputModalities = normalizeCatalogItems(model.output_modalities)
+  const inputModalities = getCatalogInputModalities(model)
+  const outputModalities = getCatalogOutputModalities(model)
   const contextLength = model.context_length ?? 0
   const maxOutput = model.max_output_tokens ?? 0
   const knowledgeCutoff = formatCatalogYearMonth(model.knowledge_cutoff)
@@ -449,36 +435,26 @@ function ModelBackendQuickStats(props: { model: PricingModel }) {
 
 function ModelBackendSignalsSection(props: { model: PricingModel }) {
   const { t } = useTranslation()
-  const capabilities = normalizeCatalogItems(props.model.capabilities)
-  const inputModalities = normalizeCatalogItems(props.model.input_modalities)
-  const outputModalities = normalizeCatalogItems(props.model.output_modalities)
+  const categories = getCatalogCategories(props.model)
+  const supportedParameters = getCatalogSupportedParameters(props.model)
+  const inputModalities = getCatalogInputModalities(props.model)
+  const outputModalities = getCatalogOutputModalities(props.model)
+  const architectureModality = props.model.architecture?.modality?.trim()
 
   if (
-    capabilities.length === 0 &&
+    categories.length === 0 &&
+    supportedParameters.length === 0 &&
     inputModalities.length === 0 &&
-    outputModalities.length === 0
+    outputModalities.length === 0 &&
+    !architectureModality
   ) {
     return null
   }
 
   return (
     <section>
-      <SectionTitle>
-        {t('Capabilities')} / {t('Supported modalities')}
-      </SectionTitle>
-      <div className='grid gap-3 rounded-xl border p-3 @2xl/details:grid-cols-[minmax(0,1.5fr)_minmax(260px,1fr)]'>
-        {capabilities.length > 0 ? (
-          <CatalogPillList
-            items={capabilities.map((capability) =>
-              t(
-                CAPABILITY_LABEL_KEYS[capability as ModelCapability] ??
-                  capability
-              )
-            )}
-          />
-        ) : (
-          <div />
-        )}
+      <SectionTitle>{t('Model capabilities')}</SectionTitle>
+      <div className='grid gap-3 rounded-xl border p-3'>
         {(inputModalities.length > 0 || outputModalities.length > 0) && (
           <div className='grid gap-2 sm:grid-cols-2'>
             {inputModalities.length > 0 && (
@@ -501,6 +477,32 @@ function ModelBackendSignalsSection(props: { model: PricingModel }) {
                 </CatalogTextValue>
               </div>
             )}
+          </div>
+        )}
+        <div className='grid gap-3 sm:grid-cols-2'>
+          {architectureModality && (
+            <div className='space-y-1.5'>
+              <div className='text-muted-foreground text-xs font-medium'>
+                {t('Architecture')}
+              </div>
+              <CatalogTextValue>{architectureModality}</CatalogTextValue>
+            </div>
+          )}
+          {categories.length > 0 && (
+            <div className='space-y-1.5'>
+              <div className='text-muted-foreground text-xs font-medium'>
+                {t('Derived categories')}
+              </div>
+              <CatalogPillList items={categories} />
+            </div>
+          )}
+        </div>
+        {supportedParameters.length > 0 && (
+          <div className='space-y-1.5'>
+            <div className='text-muted-foreground text-xs font-medium'>
+              {t('Supported parameters')}
+            </div>
+            <CatalogPillList items={supportedParameters} />
           </div>
         )}
       </div>

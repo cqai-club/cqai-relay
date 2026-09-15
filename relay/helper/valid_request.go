@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
@@ -54,7 +55,17 @@ func GetAndValidateRequest(c *gin.Context, format types.RelayFormat) (request dt
 	default:
 		return nil, fmt.Errorf("unsupported relay format: %s", format)
 	}
+	if err == nil && request != nil {
+		applyCanonicalRequestModel(c, request)
+	}
 	return request, err
+}
+
+func applyCanonicalRequestModel(c *gin.Context, request dto.Request) {
+	canonicalModelName := common.GetContextKeyString(c, constant.ContextKeyOriginalModel)
+	if canonicalModelName != "" {
+		request.SetModelName(canonicalModelName)
+	}
 }
 
 func GetAndValidAudioRequest(c *gin.Context, relayMode int) (*dto.AudioRequest, error) {
@@ -203,6 +214,7 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 			}
 			imageRequest.Quality = formData.Get("quality")
 			imageRequest.Size = formData.Get("size")
+			applyCanonicalRequestModel(c, imageRequest)
 			if streamValue := strings.TrimSpace(formData.Get("stream")); streamValue != "" {
 				stream, err := strconv.ParseBool(streamValue)
 				if err != nil {
@@ -236,6 +248,7 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 		if err != nil {
 			return nil, err
 		}
+		applyCanonicalRequestModel(c, imageRequest)
 
 		if imageRequest.Model == "" {
 			//imageRequest.Model = "dall-e-3"

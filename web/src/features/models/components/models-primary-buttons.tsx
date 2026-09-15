@@ -23,6 +23,7 @@ import {
   List,
   Building2,
   AlertCircle,
+  ScanSearch,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
@@ -53,6 +54,10 @@ export function ModelsPrimaryButtons() {
 
   const handleSync = () => {
     setOpen('sync-wizard')
+  }
+
+  const handleReconcile = () => {
+    setOpen('reconcile-models')
   }
 
   const handlePrefillGroups = () => {
@@ -88,6 +93,13 @@ export function ModelsPrimaryButtons() {
             {t('Sync Upstream')}
             <DropdownMenuShortcut>
               <RefreshCw className='h-4 w-4' />
+            </DropdownMenuShortcut>
+          </DropdownMenuItem>
+
+          <DropdownMenuItem onClick={handleReconcile}>
+            {t('Model identification')}
+            <DropdownMenuShortcut>
+              <ScanSearch className='h-4 w-4' />
             </DropdownMenuShortcut>
           </DropdownMenuItem>
 

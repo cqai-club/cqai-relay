@@ -99,6 +99,25 @@ export function getSyncStatusOptions(t: TFunction) {
   ] as const
 }
 
+export function getMetadataStatusOptions(t: TFunction) {
+  return [
+    { label: t('All identification statuses'), value: 'all' },
+    { label: t('Confirmed'), value: 'confirmed' },
+    { label: t('Pending identification'), value: 'pending' },
+  ] as const
+}
+
+export function getMetadataSourceOptions(t: TFunction) {
+  return [
+    { label: t('All metadata sources'), value: 'all' },
+    { label: t('Manual'), value: 'manual' },
+    { label: t('BaseLLM exact match'), value: 'basellm_exact' },
+    { label: t('BaseLLM normalized match'), value: 'basellm_normalized' },
+    { label: t('Channel discovery'), value: 'channel' },
+    { label: t('Migration'), value: 'migration' },
+  ] as const
+}
+
 // ============================================================================
 // Deployment Status
 // ============================================================================
@@ -168,15 +187,6 @@ export const ENDPOINT_TEMPLATES: Record<
   'image-generation': { path: '/v1/images/generations', method: 'POST' },
   embeddings: { path: '/v1/embeddings', method: 'POST' },
 }
-
-export const MODEL_CAPABILITY_VALUES = [
-  'image',
-  'video',
-  'text-multimodal',
-  'text',
-  'audio',
-  'other',
-] as const
 
 // ============================================================================
 // Sync Locale Options

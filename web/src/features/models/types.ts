@@ -31,7 +31,7 @@ export interface BoundChannel {
 }
 
 /**
- * Capability categories exposed to Account Service model consumers.
+ * Compatibility categories derived from structured model metadata.
  */
 export type ModelCategory =
   | 'image'
@@ -40,6 +40,22 @@ export type ModelCategory =
   | 'text-multimodal'
   | 'audio'
   | 'other'
+
+/** OpenRouter-style architecture metadata. Unknown values remain supported. */
+export interface ModelArchitecture {
+  modality?: string
+  input_modalities?: string[]
+  output_modalities?: string[]
+}
+
+export type ModelMetadataStatus = 'pending' | 'confirmed'
+
+export type ModelMetadataSource =
+  | 'manual'
+  | 'basellm_exact'
+  | 'basellm_normalized'
+  | 'channel'
+  | 'migration'
 
 /**
  * Model entity from API
@@ -53,6 +69,13 @@ export interface Model {
   vendor_id?: number
   endpoints?: string
   capabilities?: ModelCategory[]
+  input_modalities?: string[]
+  output_modalities?: string[]
+  supported_parameters?: string[]
+  context_length?: number
+  max_output_tokens?: number
+  metadata_status?: ModelMetadataStatus
+  metadata_source?: ModelMetadataSource
   status: number
   sync_official: number
   created_time: number
@@ -103,6 +126,8 @@ export interface GetModelsParams {
   vendor?: string // vendor ID to filter by
   status?: string // filter by status
   sync_official?: string // filter by sync_official status
+  metadata_status?: string
+  metadata_source?: string
 }
 
 /**
@@ -113,6 +138,8 @@ export interface SearchModelsParams {
   vendor?: string // vendor ID to filter by
   status?: string // filter by status
   sync_official?: string // filter by sync_official status
+  metadata_status?: string
+  metadata_source?: string
   p?: number
   page_size?: number
 }
@@ -223,6 +250,70 @@ export interface MissingModelsResponse {
   data?: string[]
 }
 
+export interface ModelReconcileMatch {
+  channel_id: number
+  channel_name: string
+  upstream_model: string
+  canonical_model: string
+  match_type: 'exact' | 'normalized'
+  metadata_source: ModelMetadataSource
+  create_alias: boolean
+  capabilities: ModelCategory[]
+  retire_after?: number
+}
+
+export interface ModelReconcilePending {
+  channel_id: number
+  channel_name: string
+  upstream_model: string
+  reason: string
+}
+
+export interface ModelReconcileConflict {
+  channel_id: number
+  channel_name: string
+  upstream_model: string
+  canonical_model?: string
+  reason: string
+  detail?: string
+}
+
+export interface ModelAlias {
+  id: number
+  alias_name: string
+  canonical_model_name: string
+  status: 'active' | 'retired'
+  retire_after: number
+  source: string
+  last_used_time?: number
+  request_count: number
+  created_time: number
+  updated_time: number
+}
+
+export interface ModelReconcilePreviewResponse {
+  success: boolean
+  message?: string
+  data?: {
+    safe_matches: ModelReconcileMatch[]
+    pending: ModelReconcilePending[]
+    conflicts: ModelReconcileConflict[]
+    aliases: Array<{
+      alias_name: string
+      canonical_model_name: string
+      retire_after: number
+      source: string
+    }>
+    source?: Record<string, string>
+  }
+}
+
+export interface ModelAliasesResponse {
+  success: boolean
+  message?: string
+  data?: ModelAlias[]
+}
+
 /**
  * Prefill groups response
  */
@@ -236,6 +327,15 @@ export interface PrefillGroupsResponse {
 // Form Data Types
 // ============================================================================
 
+const catalogLimitSchema = z
+  .string()
+  .refine(
+    (value) =>
+      value === '' ||
+      (/^\d+$/.test(value) && Number.isSafeInteger(Number(value))),
+    'Enter a non-negative whole number'
+  )
+
 /**
  * Model form schema
  */
@@ -247,11 +347,11 @@ export const modelFormSchema = z.object({
   tags: z.array(z.string()).default([]),
   vendor_id: z.number().optional(),
   endpoints: z.string().default(''),
-  capabilities: z
-    .array(
-      z.enum(['image', 'video', 'text', 'text-multimodal', 'audio', 'other'])
-    )
-    .default([]),
+  input_modalities: z.array(z.string()).default([]),
+  output_modalities: z.array(z.string()).default([]),
+  supported_parameters: z.array(z.string()).default([]),
+  context_length: catalogLimitSchema.default(''),
+  max_output_tokens: catalogLimitSchema.default(''),
   name_rule: z.number().min(0).max(3).default(0),
   status: z.boolean().default(true),
   sync_official: z.boolean().default(true),

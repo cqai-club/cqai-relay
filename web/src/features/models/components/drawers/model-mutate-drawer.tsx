@@ -17,11 +17,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import type { TFunction } from 'i18next'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, Loader2 } from 'lucide-react'
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import * as z from 'zod'
@@ -37,7 +36,6 @@ import {
 import { JsonEditor } from '@/components/json-editor'
 import { TagInput } from '@/components/tag-input'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
 import {
   Collapsible,
   CollapsibleContent,
@@ -83,14 +81,27 @@ import { normalizeJsonString } from '@/features/system-settings/models/utils'
 import type { ModelSettings } from '@/features/system-settings/types'
 import { safeJsonParse } from '@/features/system-settings/utils/json-parser'
 
-import { createModel, updateModel, getModel, getVendors } from '../../api'
 import {
-  getNameRuleOptions,
-  ENDPOINT_TEMPLATES,
-  MODEL_CAPABILITY_VALUES,
-} from '../../constants'
-import { modelsQueryKeys, vendorsQueryKeys, parseModelTags } from '../../lib'
-import type { Model, ModelCategory } from '../../types'
+  createModel,
+  updateModel,
+  getModel,
+  getVendors,
+  restoreModelAutoRecognition,
+} from '../../api'
+import { getNameRuleOptions, ENDPOINT_TEMPLATES } from '../../constants'
+import {
+  canRestoreAutomaticRecognition,
+  formatModelCatalogLimit,
+  formatEndpointsDisplay,
+  modelCatalogLimitSchema,
+  modelsQueryKeys,
+  normalizeModelCatalogItems,
+  parseModelCatalogLimit,
+  parseModelTags,
+  vendorsQueryKeys,
+} from '../../lib'
+import type { Model } from '../../types'
+import { ModelCatalogFields } from '../model-catalog-fields'
 
 // Extended schema for ratio configuration (internal form state only)
 const extendedModelFormSchema = z.object({
@@ -101,7 +112,11 @@ const extendedModelFormSchema = z.object({
   tags: z.array(z.string()),
   vendor_id: z.number().optional(),
   endpoints: z.string(),
-  capabilities: z.array(z.enum(MODEL_CAPABILITY_VALUES)),
+  input_modalities: z.array(z.string()),
+  output_modalities: z.array(z.string()),
+  supported_parameters: z.array(z.string()),
+  context_length: modelCatalogLimitSchema,
+  max_output_tokens: modelCatalogLimitSchema,
   name_rule: z.number(),
   status: z.boolean(),
   sync_official: z.boolean(),
@@ -284,6 +299,9 @@ export function ModelMutateDrawer({
     },
     enabled: open && isEditing,
   })
+  const currentModel = modelData?.data || currentRow
+  const showRestoreAutomaticRecognition =
+    isEditing && canRestoreAutomaticRecognition(currentModel)
 
   // Fetch system options for ratio configuration
   const { data: systemOptionsData } = useSystemOptions()
@@ -374,7 +392,11 @@ export function ModelMutateDrawer({
       tags: [],
       vendor_id: undefined,
       endpoints: '',
-      capabilities: [],
+      input_modalities: [],
+      output_modalities: [],
+      supported_parameters: [],
+      context_length: '',
+      max_output_tokens: '',
       name_rule: 0,
       status: true,
       sync_official: true,
@@ -387,6 +409,55 @@ export function ModelMutateDrawer({
       audioCompletionRatio: '',
     },
   })
+
+  const [
+    inputModalities,
+    outputModalities,
+    supportedParameters,
+    contextLength,
+    maxOutputTokens,
+    endpoints,
+  ] = useWatch({
+    control: form.control,
+    name: [
+      'input_modalities',
+      'output_modalities',
+      'supported_parameters',
+      'context_length',
+      'max_output_tokens',
+      'endpoints',
+    ],
+  })
+
+  const restoreRecognitionMutation = useMutation({
+    mutationFn: async () => {
+      if (!currentModelId) throw new Error(t('Model ID is required'))
+      const response = await restoreModelAutoRecognition(currentModelId)
+      if (!response.success) {
+        throw new Error(
+          response.message || t('Failed to restore automatic recognition')
+        )
+      }
+      return response
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: modelsQueryKeys.all })
+      toast.success(t('Automatic recognition restored'))
+      onOpenChange(false)
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || t('Failed to restore automatic recognition'))
+    },
+  })
+
+  const handleRestoreAutomaticRecognition = async () => {
+    try {
+      await restoreRecognitionMutation.mutateAsync()
+      return true
+    } catch {
+      return false
+    }
+  }
 
   const validateNumber = (value: string) => {
     if (value === '') return true
@@ -443,7 +514,11 @@ export function ModelMutateDrawer({
         tags: parseModelTags(model.tags),
         vendor_id: model.vendor_id,
         endpoints: model.endpoints || '',
-        capabilities: model.capabilities || [],
+        input_modalities: model.input_modalities || [],
+        output_modalities: model.output_modalities || [],
+        supported_parameters: model.supported_parameters || [],
+        context_length: formatModelCatalogLimit(model.context_length),
+        max_output_tokens: formatModelCatalogLimit(model.max_output_tokens),
         name_rule: model.name_rule || 0,
         status: model.status === 1,
         sync_official: model.sync_official === 1,
@@ -469,7 +544,11 @@ export function ModelMutateDrawer({
         tags: [],
         vendor_id: undefined,
         endpoints: '',
-        capabilities: [],
+        input_modalities: [],
+        output_modalities: [],
+        supported_parameters: [],
+        context_length: '',
+        max_output_tokens: '',
         name_rule: 0,
         status: true,
         sync_official: true,
@@ -488,6 +567,15 @@ export function ModelMutateDrawer({
           tags: Array.isArray(values.tags) ? values.tags.join(',') : '',
           status: values.status ? 1 : 0,
           sync_official: values.sync_official ? 1 : 0,
+          input_modalities: normalizeModelCatalogItems(values.input_modalities),
+          output_modalities: normalizeModelCatalogItems(
+            values.output_modalities
+          ),
+          supported_parameters: normalizeModelCatalogItems(
+            values.supported_parameters
+          ),
+          context_length: parseModelCatalogLimit(values.context_length),
+          max_output_tokens: parseModelCatalogLimit(values.max_output_tokens),
         }
 
         // Remove ratio fields from model data (they're stored in system settings)
@@ -885,53 +973,72 @@ export function ModelMutateDrawer({
                   </FormItem>
                 )}
               />
+            </SideDrawerSection>
 
-              <FormField
-                control={form.control}
-                name='capabilities'
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('Model capabilities')}</FormLabel>
-                    <FormDescription>
-                      {t(
-                        'Select the capabilities exposed to Account Service model consumers.'
-                      )}
-                    </FormDescription>
-                    <div className='grid grid-cols-2 gap-3 pt-1'>
-                      {MODEL_CAPABILITY_VALUES.map((capability) => {
-                        const label = getModelCapabilityLabel(t, capability)
-                        return (
-                          <label
-                            key={capability}
-                            className='flex items-center gap-3 text-sm font-normal'
-                          >
-                            <Checkbox
-                              checked={field.value.includes(capability)}
-                              onCheckedChange={(checked) => {
-                                const current = field.value
-                                if (checked !== true) {
-                                  field.onChange(
-                                    current.filter(
-                                      (value) => value !== capability
-                                    )
-                                  )
-                                  return
-                                }
-                                if (current.includes(capability)) {
-                                  field.onChange(current)
-                                  return
-                                }
-                                field.onChange([...current, capability])
-                              }}
-                            />
-                            {label}
-                          </label>
-                        )
-                      })}
-                    </div>
-                    <FormMessage />
-                  </FormItem>
-                )}
+            <SideDrawerSection>
+              <h3 className='text-sm font-semibold'>
+                {t('Model catalog metadata')}
+              </h3>
+              <ModelCatalogFields
+                inputModalities={inputModalities}
+                outputModalities={outputModalities}
+                supportedParameters={supportedParameters}
+                contextLength={contextLength}
+                maxOutputTokens={maxOutputTokens}
+                fallbackCategories={
+                  form.formState.dirtyFields.input_modalities ||
+                  form.formState.dirtyFields.output_modalities
+                    ? []
+                    : modelData?.data?.capabilities || currentRow?.capabilities
+                }
+                endpointTypes={formatEndpointsDisplay(endpoints)}
+                contextLengthError={
+                  form.formState.errors.context_length?.message
+                    ? t(String(form.formState.errors.context_length.message))
+                    : undefined
+                }
+                maxOutputTokensError={
+                  form.formState.errors.max_output_tokens?.message
+                    ? t(String(form.formState.errors.max_output_tokens.message))
+                    : undefined
+                }
+                showRestoreAutomaticRecognition={
+                  showRestoreAutomaticRecognition
+                }
+                isRestoring={restoreRecognitionMutation.isPending}
+                onInputModalitiesChange={(value) =>
+                  form.setValue('input_modalities', value, {
+                    shouldDirty: true,
+                    shouldValidate: true,
+                  })
+                }
+                onOutputModalitiesChange={(value) =>
+                  form.setValue('output_modalities', value, {
+                    shouldDirty: true,
+                    shouldValidate: true,
+                  })
+                }
+                onSupportedParametersChange={(value) =>
+                  form.setValue('supported_parameters', value, {
+                    shouldDirty: true,
+                    shouldValidate: true,
+                  })
+                }
+                onContextLengthChange={(value) =>
+                  form.setValue('context_length', value, {
+                    shouldDirty: true,
+                    shouldValidate: true,
+                  })
+                }
+                onMaxOutputTokensChange={(value) =>
+                  form.setValue('max_output_tokens', value, {
+                    shouldDirty: true,
+                    shouldValidate: true,
+                  })
+                }
+                onRestoreAutomaticRecognition={
+                  handleRestoreAutomaticRecognition
+                }
               />
             </SideDrawerSection>
 
@@ -1448,24 +1555,4 @@ export function ModelMutateDrawer({
       </SheetContent>
     </Sheet>
   )
-}
-
-function getModelCapabilityLabel(
-  t: TFunction,
-  capability: ModelCategory
-): string {
-  switch (capability) {
-    case 'image':
-      return t('Image generation')
-    case 'video':
-      return t('Video generation')
-    case 'text-multimodal':
-      return t('Multimodal text')
-    case 'text':
-      return t('Text')
-    case 'audio':
-      return t('Audio')
-    case 'other':
-      return t('Other')
-  }
 }

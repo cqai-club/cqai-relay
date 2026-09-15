@@ -285,6 +285,19 @@ func TestTaskBillingOtherOmitsEmptyUsageFacts(t *testing.T) {
 	assert.NotContains(t, other, "usage_facts")
 }
 
+func TestTaskBillingOtherRecordsRequestedCanonicalAndUpstreamNames(t *testing.T) {
+	task := makeTask(1, 1, 100, 0, BillingSourceWallet, 0)
+	task.Properties.RequestedModelName = "OpenAI/GPT-5"
+	task.Properties.OriginModelName = "gpt-5"
+	task.Properties.UpstreamModelName = "commandcode-gpt-5"
+
+	other := taskBillingOther(task)
+
+	assert.Equal(t, "OpenAI/GPT-5", other["requested_model_name"])
+	assert.Equal(t, "commandcode-gpt-5", other["upstream_model_name"])
+	assert.True(t, other["is_model_mapped"].(bool))
+}
+
 func callLogTaskConsumption(t *testing.T, info *relaycommon.RelayInfo, task *model.Task) *model.Log {
 	t.Helper()
 	gin.SetMode(gin.TestMode)

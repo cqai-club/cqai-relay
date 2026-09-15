@@ -108,7 +108,46 @@ func (modelUpdateHandler) Run(ctx context.Context, task *model.SystemTask, runne
 		return
 	}
 	summary := runChannelUpstreamModelUpdateTaskOnce(ctx, payload.Manual, !payload.Manual, service.NewSystemTaskProgressReporter(task, runnerID))
-	finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusSucceeded, summary, nil)
+	if payload.Manual || !common.GetEnvOrDefaultBool("MODEL_METADATA_AUTO_RECONCILE_ENABLED", false) {
+		finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusSucceeded, summary, nil)
+		return
+	}
+	metadataResult := runAutomaticModelReconcile(ctx)
+	finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusSucceeded, map[string]interface{}{
+		"channel_update":     summary,
+		"metadata_reconcile": metadataResult,
+	}, nil)
+}
+
+func runAutomaticModelReconcile(ctx context.Context) map[string]interface{} {
+	result := map[string]interface{}{
+		"created":   0,
+		"confirmed": 0,
+		"pending":   0,
+		"conflicts": 0,
+		"aliases":   0,
+	}
+	preview, catalog, vendors, err := previewModelReconcile(ctx, "", nil)
+	if err != nil {
+		result["warning"] = err.Error()
+		common.SysLog("automatic model metadata reconcile skipped: " + err.Error())
+		return result
+	}
+	result["pending"] = len(preview.Pending)
+	result["conflicts"] = len(preview.Conflicts)
+	if len(preview.SafeMatches) == 0 {
+		return result
+	}
+	applied, err := applyModelReconcileMatches(preview.SafeMatches, catalog, vendors)
+	if err != nil {
+		result["warning"] = err.Error()
+		return result
+	}
+	result["created"] = applied["created_models"]
+	result["confirmed"] = applied["confirmed_models"]
+	result["aliases"] = applied["created_aliases"]
+	result["applied"] = applied["applied"]
+	return result
 }
 
 // midjourneyPollHandler runs one Midjourney polling pass per scheduled run.

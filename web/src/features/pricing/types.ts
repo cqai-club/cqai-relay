@@ -46,6 +46,8 @@ export type BillingUsageExample = {
 export type PricingModel = {
   id: number
   model_name: string
+  canonical_slug?: string
+  name?: string
   description?: string
   icon?: string
   vendor_id?: number
@@ -85,28 +87,21 @@ export type PricingModel = {
   knowledge_cutoff?: string
   release_date?: string
   parameter_count?: string
-  input_modalities?: Modality[]
-  output_modalities?: Modality[]
-  capabilities?: ModelCapability[]
+  architecture?: ModelArchitecture | null
+  supported_parameters?: string[] | null
+  categories?: string[]
+  /** @deprecated Compatibility with older pricing payloads. */
+  input_modalities?: string[]
+  /** @deprecated Compatibility with older pricing payloads. */
+  output_modalities?: string[]
 }
 
-/** Input/output modalities supported by a model. */
-export type Modality = 'text' | 'image' | 'audio' | 'video' | 'file'
-
-/** Functional capabilities a model exposes. */
-export type ModelCapability =
-  | 'function_calling'
-  | 'streaming'
-  | 'vision'
-  | 'json_mode'
-  | 'structured_output'
-  | 'reasoning'
-  | 'tools'
-  | 'system_prompt'
-  | 'web_search'
-  | 'code_interpreter'
-  | 'caching'
-  | 'embeddings'
+/** OpenRouter-style model architecture. Unknown modalities stay visible. */
+export type ModelArchitecture = {
+  modality?: string
+  input_modalities?: string[]
+  output_modalities?: string[]
+}
 
 export type PricingData = {
   success: boolean

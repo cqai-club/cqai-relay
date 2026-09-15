@@ -1,6 +1,8 @@
 package model
 
 import (
+	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -9,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/config"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/performance_setting"
@@ -256,12 +259,16 @@ func UpdateOption(key string, value string) error {
 }
 
 // UpdateOptionsBulk persists multiple key/value pairs in a single database
-// transaction, then dispatches them through updateOptionMap in one pass. If
-// any DB write fails the whole transaction rolls back and no in-memory state
-// is touched — safe for callers that must commit a set of related options
-// atomically (e.g. payment gateway binding).
+// transaction, then dispatches them through updateOptionMap in one pass.
 func UpdateOptionsBulk(values map[string]string) error {
-	if len(values) == 0 {
+	return UpdateOptionsBulkAtomically(values, nil)
+}
+
+// UpdateOptionsBulkAtomically commits option changes together with an optional
+// related database mutation. In-memory settings are updated only after the
+// database transaction succeeds.
+func UpdateOptionsBulkAtomically(values map[string]string, update func(tx *gorm.DB) error) error {
+	if len(values) == 0 && update == nil {
 		return nil
 	}
 	for key, value := range values {
@@ -269,8 +276,32 @@ func UpdateOptionsBulk(values map[string]string) error {
 			return err
 		}
 	}
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	// A related mutation can make a newly renamed model routable immediately
+	// after commit, including when the channel memory cache is disabled. Publish
+	// its pricing configuration inside the transaction, after all database work
+	// has succeeded but before commit, so readers can only observe either the old
+	// route with the old pricing or the new route with the new pricing.
+	prepublish := update != nil && len(values) > 0
+	previousValues := make(map[string]string, len(values))
+	if prepublish {
+		for _, key := range keys {
+			value, err := currentRuntimeOptionValue(key)
+			if err != nil {
+				return err
+			}
+			previousValues[key] = value
+		}
+	}
+	publishedKeys := make([]string, 0, len(values))
 	err := DB.Transaction(func(tx *gorm.DB) error {
-		for k, v := range values {
+		for _, k := range keys {
+			v := values[k]
 			option := Option{Key: k}
 			if err := tx.FirstOrCreate(&option, Option{Key: k}).Error; err != nil {
 				return err
@@ -280,17 +311,73 @@ func UpdateOptionsBulk(values map[string]string) error {
 				return err
 			}
 		}
+		if update != nil {
+			if err := update(tx); err != nil {
+				return err
+			}
+		}
+		if prepublish {
+			for _, key := range keys {
+				publishedKeys = append(publishedKeys, key)
+				if err := updateOptionMap(key, values[key]); err != nil {
+					return err
+				}
+			}
+		}
 		return nil
 	})
 	if err != nil {
+		for i := len(publishedKeys) - 1; i >= 0; i-- {
+			key := publishedKeys[i]
+			if restoreErr := updateOptionMap(key, previousValues[key]); restoreErr != nil {
+				common.SysError("failed to restore in-memory option after transaction rollback: " + restoreErr.Error())
+			}
+		}
 		return err
 	}
-	for k, v := range values {
-		if err := updateOptionMap(k, v); err != nil {
-			return err
+	if !prepublish {
+		for _, key := range keys {
+			if err := updateOptionMap(key, values[key]); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
+}
+
+func currentRuntimeOptionValue(key string) (string, error) {
+	switch key {
+	case "ModelRatio":
+		return ratio_setting.ModelRatio2JSONString(), nil
+	case "ModelPrice":
+		return ratio_setting.ModelPrice2JSONString(), nil
+	case "CompletionRatio":
+		return ratio_setting.CompletionRatio2JSONString(), nil
+	case "CacheRatio":
+		return ratio_setting.CacheRatio2JSONString(), nil
+	case "CreateCacheRatio":
+		return ratio_setting.CreateCacheRatio2JSONString(), nil
+	case "ImageRatio":
+		return ratio_setting.ImageRatio2JSONString(), nil
+	case "AudioRatio":
+		return ratio_setting.AudioRatio2JSONString(), nil
+	case "AudioCompletionRatio":
+		return ratio_setting.AudioCompletionRatio2JSONString(), nil
+	case "billing_setting.billing_mode":
+		encoded, err := common.Marshal(billing_setting.GetBillingModeCopy())
+		return string(encoded), err
+	case "billing_setting.billing_expr":
+		encoded, err := common.Marshal(billing_setting.GetBillingExprCopy())
+		return string(encoded), err
+	default:
+		common.OptionMapRWMutex.RLock()
+		value, ok := common.OptionMap[key]
+		common.OptionMapRWMutex.RUnlock()
+		if !ok {
+			return "", fmt.Errorf("cannot atomically publish option %q without a runtime snapshot", key)
+		}
+		return value, nil
+	}
 }
 
 func updateOptionMap(key string, value string) (err error) {

@@ -214,7 +214,7 @@ func identityFilterRequiresKey(filters []dto.ChannelFilter) bool {
 }
 
 func (channel *Channel) AddAbilities(tx *gorm.DB) error {
-	models_ := strings.Split(channel.Models, ",")
+	models_ := normalizeLookupValues(strings.Split(channel.Models, ","))
 	groups_ := strings.Split(channel.Group, ",")
 	abilitySet := make(map[string]struct{})
 	abilities := make([]Ability, 0, len(models_))
@@ -244,6 +244,9 @@ func (channel *Channel) AddAbilities(tx *gorm.DB) error {
 	useDB := DB
 	if tx != nil {
 		useDB = tx
+	}
+	if err := EnsureModelMetadataRecords(useDB, models_, ModelMetadataSourceChannel); err != nil {
+		return err
 	}
 	for _, chunk := range lo.Chunk(abilities, 50) {
 		err := useDB.Clauses(clause.OnConflict{DoNothing: true}).Create(&chunk).Error
@@ -286,7 +289,7 @@ func (channel *Channel) UpdateAbilities(tx *gorm.DB) error {
 	}
 
 	// Then add new abilities
-	models_ := strings.Split(channel.Models, ",")
+	models_ := normalizeLookupValues(strings.Split(channel.Models, ","))
 	groups_ := strings.Split(channel.Group, ",")
 	abilitySet := make(map[string]struct{})
 	abilities := make([]Ability, 0, len(models_))
@@ -311,6 +314,12 @@ func (channel *Channel) UpdateAbilities(tx *gorm.DB) error {
 	}
 
 	if len(abilities) > 0 {
+		if err = EnsureModelMetadataRecords(tx, models_, ModelMetadataSourceChannel); err != nil {
+			if isNewTx {
+				tx.Rollback()
+			}
+			return err
+		}
 		for _, chunk := range lo.Chunk(abilities, 50) {
 			err = tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&chunk).Error
 			if err != nil {

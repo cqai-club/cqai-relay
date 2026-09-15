@@ -39,6 +39,7 @@ type DialogType =
   | 'update-vendor'
   | 'missing-models'
   | 'sync-wizard'
+  | 'reconcile-models'
   | 'upstream-conflict'
   | 'prefill-groups'
   | 'description'

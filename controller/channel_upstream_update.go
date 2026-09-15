@@ -98,6 +98,15 @@ type upstreamModelUpdateChannelSummary struct {
 	RemoveCount int
 }
 
+type channelUpstreamModelCatalog struct {
+	IDs      []string
+	Metadata map[string]OpenAIModel
+}
+
+func channelModelCatalogFromIDs(ids []string) channelUpstreamModelCatalog {
+	return channelUpstreamModelCatalog{IDs: normalizeModelNames(ids)}
+}
+
 func normalizeModelNames(models []string) []string {
 	return lo.Uniq(lo.FilterMap(models, func(model string, _ int) (string, bool) {
 		trimmed := strings.TrimSpace(model)
@@ -239,17 +248,22 @@ func collectPendingUpstreamModelChangesFromModels(
 }
 
 func collectPendingUpstreamModelChanges(channel *model.Channel, settings dto.ChannelOtherSettings) (pendingAddModels []string, pendingRemoveModels []string, err error) {
-	upstreamModels, err := fetchChannelUpstreamModelIDs(channel)
+	pendingAddModels, pendingRemoveModels, _, err = collectPendingUpstreamModelChangesWithCatalog(channel, settings)
+	return pendingAddModels, pendingRemoveModels, err
+}
+
+func collectPendingUpstreamModelChangesWithCatalog(channel *model.Channel, settings dto.ChannelOtherSettings) (pendingAddModels []string, pendingRemoveModels []string, catalog channelUpstreamModelCatalog, err error) {
+	catalog, err = fetchChannelUpstreamModels(channel)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, channelUpstreamModelCatalog{}, err
 	}
 	pendingAddModels, pendingRemoveModels = collectPendingUpstreamModelChangesFromModels(
 		channel.GetModels(),
-		upstreamModels,
+		catalog.IDs,
 		settings.UpstreamModelUpdateIgnoredModels,
 		normalizeChannelModelMapping(channel),
 	)
-	return pendingAddModels, pendingRemoveModels, nil
+	return pendingAddModels, pendingRemoveModels, catalog, nil
 }
 
 func getUpstreamModelUpdateMinCheckIntervalSeconds() int64 {
@@ -362,12 +376,20 @@ func getFetchModelsResponseBody(method string, requestURL string, channel *model
 }
 
 func fetchChannelUpstreamModelIDs(channel *model.Channel) ([]string, error) {
+	catalog, err := fetchChannelUpstreamModels(channel)
+	if err != nil {
+		return nil, err
+	}
+	return catalog.IDs, err
+}
+
+func fetchChannelUpstreamModels(channel *model.Channel) (channelUpstreamModelCatalog, error) {
 	if channel.Type == constant.ChannelTypeTaskPlugin {
 		plugin, ok := jsplugin.DefaultRegistry.Get(channel.GetSetting().TaskPluginKey)
 		if !ok {
-			return nil, fmt.Errorf("task plugin %q is not registered", channel.GetSetting().TaskPluginKey)
+			return channelUpstreamModelCatalog{}, fmt.Errorf("task plugin %q is not registered", channel.GetSetting().TaskPluginKey)
 		}
-		return normalizeModelNames(plugin.Meta.Models), nil
+		return channelModelCatalogFromIDs(plugin.Meta.Models), nil
 	}
 	baseURL := constant.GetChannelBaseURL(channel.Type)
 	if channel.GetBaseURL() != "" {
@@ -378,9 +400,9 @@ func fetchChannelUpstreamModelIDs(channel *model.Channel) ([]string, error) {
 		key := strings.TrimSpace(strings.Split(channel.Key, "\n")[0])
 		models, err := ollama.FetchOllamaModels(baseURL, key)
 		if err != nil {
-			return nil, err
+			return channelUpstreamModelCatalog{}, err
 		}
-		return normalizeModelNames(lo.Map(models, func(item ollama.OllamaModel, _ int) string {
+		return channelModelCatalogFromIDs(lo.Map(models, func(item ollama.OllamaModel, _ int) string {
 			return item.Name
 		})), nil
 	}
@@ -388,69 +410,81 @@ func fetchChannelUpstreamModelIDs(channel *model.Channel) ([]string, error) {
 	if channel.Type == constant.ChannelTypeGemini {
 		key, _, apiErr := channel.GetNextEnabledKey()
 		if apiErr != nil {
-			return nil, fmt.Errorf("获取渠道密钥失败: %w", apiErr)
+			return channelUpstreamModelCatalog{}, fmt.Errorf("获取渠道密钥失败: %w", apiErr)
 		}
 		key = strings.TrimSpace(key)
 		models, err := gemini.FetchGeminiModels(baseURL, key, channel.GetSetting().Proxy)
 		if err != nil {
-			return nil, err
+			return channelUpstreamModelCatalog{}, err
 		}
-		return normalizeModelNames(models), nil
+		return channelModelCatalogFromIDs(models), nil
 	}
 
 	if channel.Type == constant.ChannelTypeAdvancedCustom {
-		return fetchAdvancedCustomUpstreamModelIDs(channel, baseURL)
+		models, err := fetchAdvancedCustomUpstreamModelIDs(channel, baseURL)
+		return channelModelCatalogFromIDs(models), err
 	}
 
 	if channel.Type == constant.ChannelTypeCodex {
-		return service.FetchCodexChannelModels(channel)
+		models, err := service.FetchCodexChannelModels(channel)
+		return channelModelCatalogFromIDs(models), err
 	}
 
-	var url string
+	var requestURL string
 	switch channel.Type {
 	case constant.ChannelTypeAli:
-		url = fmt.Sprintf("%s/compatible-mode/v1/models", baseURL)
+		requestURL = fmt.Sprintf("%s/compatible-mode/v1/models", baseURL)
 	case constant.ChannelTypeZhipu_v4:
 		if plan, ok := constant.ChannelSpecialBases[baseURL]; ok && plan.OpenAIBaseURL != "" {
-			url = fmt.Sprintf("%s/models", plan.OpenAIBaseURL)
+			requestURL = fmt.Sprintf("%s/models", plan.OpenAIBaseURL)
 		} else {
-			url = fmt.Sprintf("%s/api/paas/v4/models", baseURL)
+			requestURL = fmt.Sprintf("%s/api/paas/v4/models", baseURL)
 		}
 	case constant.ChannelTypeVolcEngine:
 		if plan, ok := constant.ChannelSpecialBases[baseURL]; ok && plan.OpenAIBaseURL != "" {
-			url = fmt.Sprintf("%s/v1/models", plan.OpenAIBaseURL)
+			requestURL = fmt.Sprintf("%s/v1/models", plan.OpenAIBaseURL)
 		} else {
-			url = fmt.Sprintf("%s/v1/models", baseURL)
+			requestURL = fmt.Sprintf("%s/v1/models", baseURL)
 		}
 	case constant.ChannelTypeMoonshot:
 		if plan, ok := constant.ChannelSpecialBases[baseURL]; ok && plan.OpenAIBaseURL != "" {
-			url = fmt.Sprintf("%s/models", plan.OpenAIBaseURL)
+			requestURL = fmt.Sprintf("%s/models", plan.OpenAIBaseURL)
 		} else {
-			url = fmt.Sprintf("%s/v1/models", baseURL)
+			requestURL = fmt.Sprintf("%s/v1/models", baseURL)
 		}
 	default:
-		url = fmt.Sprintf("%s/v1/models", baseURL)
+		requestURL = fmt.Sprintf("%s/v1/models", baseURL)
+	}
+	if channel.Type == constant.ChannelTypeOpenRouter {
+		parsedURL, err := url.Parse(requestURL)
+		if err != nil {
+			return channelUpstreamModelCatalog{}, err
+		}
+		query := parsedURL.Query()
+		query.Set("output_modalities", "all")
+		parsedURL.RawQuery = query.Encode()
+		requestURL = parsedURL.String()
 	}
 
 	key, _, apiErr := channel.GetNextEnabledKey()
 	if apiErr != nil {
-		return nil, fmt.Errorf("获取渠道密钥失败: %w", apiErr)
+		return channelUpstreamModelCatalog{}, fmt.Errorf("获取渠道密钥失败: %w", apiErr)
 	}
 	key = strings.TrimSpace(key)
 
 	headers, err := buildFetchModelsHeaders(channel, key)
 	if err != nil {
-		return nil, sanitizeFetchModelsError(err, key)
+		return channelUpstreamModelCatalog{}, sanitizeFetchModelsError(err, key)
 	}
 
-	body, err := getFetchModelsResponseBody(http.MethodGet, url, channel, headers)
+	body, err := getFetchModelsResponseBody(http.MethodGet, requestURL, channel, headers)
 	if err != nil {
-		return nil, sanitizeAdvancedCustomRequestError(err, key, url)
+		return channelUpstreamModelCatalog{}, sanitizeAdvancedCustomRequestError(err, key, requestURL)
 	}
 
 	var result OpenAIModelsResponse
 	if err := common.Unmarshal(body, &result); err != nil {
-		return nil, err
+		return channelUpstreamModelCatalog{}, err
 	}
 	ids := lo.Map(result.Data, func(item OpenAIModel, _ int) string {
 		if channel.Type == constant.ChannelTypeGemini {
@@ -458,7 +492,25 @@ func fetchChannelUpstreamModelIDs(channel *model.Channel) ([]string, error) {
 		}
 		return item.ID
 	})
-	return normalizeModelNames(ids), nil
+	ids = normalizeModelNames(ids)
+	metadata := make(map[string]OpenAIModel)
+	for _, item := range result.Data {
+		item.ID = strings.TrimSpace(item.ID)
+		if item.ID == "" || (item.Architecture == nil && len(item.SupportedParameters) == 0 && item.ContextLength <= 0 &&
+			item.MaxOutputTokens <= 0 && item.TopProvider.MaxCompletionTokens <= 0) {
+			continue
+		}
+		if item.Architecture != nil {
+			item.Architecture.InputModalities = model.NormalizeModelCatalogValues(item.Architecture.InputModalities)
+			item.Architecture.OutputModalities = model.NormalizeModelCatalogValues(item.Architecture.OutputModalities)
+		}
+		item.SupportedParameters = model.NormalizeModelCatalogValues(item.SupportedParameters)
+		if item.MaxOutputTokens <= 0 {
+			item.MaxOutputTokens = item.TopProvider.MaxCompletionTokens
+		}
+		metadata[item.ID] = item
+	}
+	return channelUpstreamModelCatalog{IDs: ids, Metadata: metadata}, nil
 }
 
 func fetchAdvancedCustomUpstreamModelIDs(channel *model.Channel, baseURL string) ([]string, error) {
@@ -507,6 +559,77 @@ func updateChannelUpstreamModelSettings(channel *model.Channel, settings dto.Cha
 	return model.DB.Model(&model.Channel{}).Where("id = ?", channel.Id).Updates(updates).Error
 }
 
+func persistChannelStructuredMetadata(channel *model.Channel, catalog channelUpstreamModelCatalog) (bool, error) {
+	if channel == nil || len(catalog.Metadata) == 0 {
+		return false, nil
+	}
+	canonicalNames := normalizeModelNames(channel.GetModels())
+	if err := model.EnsureModelMetadataRecords(model.DB, canonicalNames, model.ModelMetadataSourceChannel); err != nil {
+		return false, err
+	}
+	mapping := normalizeChannelModelMapping(channel)
+	updated := false
+	for _, canonicalName := range canonicalNames {
+		upstreamName := canonicalName
+		if mapped := strings.TrimSpace(mapping[canonicalName]); mapped != "" {
+			upstreamName = mapped
+		}
+		upstream, ok := catalog.Metadata[upstreamName]
+		if !ok {
+			continue
+		}
+		var existing model.Model
+		if err := model.DB.Where("model_name = ?", canonicalName).First(&existing).Error; err != nil {
+			return updated, err
+		}
+		if isProtectedModelMetadata(existing) {
+			continue
+		}
+		if existing.MetadataStatus == model.ModelMetadataStatusConfirmed && existing.HasStructuredMetadata() &&
+			(existing.MetadataSource == model.ModelMetadataSourceBaseLLMExact || existing.MetadataSource == model.ModelMetadataSourceBaseLLMNormalized) {
+			continue
+		}
+
+		updateFields := []string{"metadata_status", "metadata_source", "updated_time"}
+		existing.MetadataStatus = model.ModelMetadataStatusConfirmed
+		existing.MetadataSource = model.ModelMetadataSourceChannel
+		existing.UpdatedTime = common.GetTimestamp()
+		if strings.TrimSpace(upstream.Description) != "" {
+			existing.Description = upstream.Description
+			updateFields = append(updateFields, "description")
+		}
+		if upstream.Architecture != nil {
+			input := model.NormalizeModelCatalogValues(upstream.Architecture.InputModalities)
+			output := model.NormalizeModelCatalogValues(upstream.Architecture.OutputModalities)
+			existing.InputModalities = input
+			existing.OutputModalities = output
+			existing.Capabilities = model.DeriveModelCategories(input, output, model.GetModelSupportEndpointTypes(canonicalName))
+			updateFields = append(updateFields, "input_modalities", "output_modalities", "capabilities")
+		}
+		if upstream.SupportedParameters != nil {
+			existing.SupportedParameters = model.NormalizeModelCatalogValues(upstream.SupportedParameters)
+			updateFields = append(updateFields, "supported_parameters")
+		}
+		if upstream.ContextLength > 0 {
+			existing.ContextLength = upstream.ContextLength
+			updateFields = append(updateFields, "context_length")
+		}
+		if upstream.MaxOutputTokens > 0 {
+			existing.MaxOutputTokens = upstream.MaxOutputTokens
+			updateFields = append(updateFields, "max_output_tokens")
+		}
+		if err := model.DB.Model(&model.Model{}).Where("id = ?", existing.Id).
+			Select(updateFields).Updates(&existing).Error; err != nil {
+			return updated, err
+		}
+		updated = true
+	}
+	if updated {
+		model.InvalidatePricingCache()
+	}
+	return updated, nil
+}
+
 func checkAndPersistChannelUpstreamModelUpdates(
 	channel *model.Channel,
 	settings *dto.ChannelOtherSettings,
@@ -522,7 +645,7 @@ func checkAndPersistChannelUpstreamModelUpdates(
 		}
 	}
 
-	pendingAddModels, pendingRemoveModels, fetchErr := collectPendingUpstreamModelChanges(channel, *settings)
+	pendingAddModels, pendingRemoveModels, upstreamCatalog, fetchErr := collectPendingUpstreamModelChangesWithCatalog(channel, *settings)
 	settings.UpstreamModelUpdateLastCheckTime = now
 	if fetchErr != nil {
 		if err = updateChannelUpstreamModelSettings(channel, *settings, false); err != nil {
@@ -552,6 +675,9 @@ func checkAndPersistChannelUpstreamModelUpdates(
 		if err = channel.UpdateAbilities(nil); err != nil {
 			return true, autoAdded, err
 		}
+	}
+	if _, metadataErr := persistChannelStructuredMetadata(channel, upstreamCatalog); metadataErr != nil {
+		return modelsChanged, autoAdded, metadataErr
 	}
 	return modelsChanged, autoAdded, nil
 }

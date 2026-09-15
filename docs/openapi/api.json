@@ -5032,6 +5032,170 @@
         ]
       }
     },
+    "/api/models/{id}/restore_auto": {
+      "post": {
+        "summary": "恢复模型元数据自动识别",
+        "deprecated": false,
+        "description": "不访问外部网络；保留最后一次有效元数据，将模型改为待识别并允许后续目录同步刷新。👨‍💼 需要管理员权限（Admin）",
+        "tags": [
+          "模型管理"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "模型元数据 ID",
+            "required": true,
+            "example": 1,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {}
+          }
+        },
+        "security": [
+          {
+            "Combination343": []
+          },
+          {
+            "Combination1243": []
+          }
+        ]
+      }
+    },
+    "/api/models/reconcile/preview": {
+      "get": {
+        "summary": "预览模型标准化匹配",
+        "deprecated": false,
+        "description": "只读预览 BaseLLM 精确及唯一规范化匹配、待识别项、冲突和预计创建的兼容别名。👨‍💼 需要管理员权限（Admin）",
+        "tags": [
+          "模型管理"
+        ],
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {}
+          }
+        },
+        "security": [
+          {
+            "Combination343": []
+          },
+          {
+            "Combination1243": []
+          }
+        ]
+      }
+    },
+    "/api/models/reconcile/apply": {
+      "post": {
+        "summary": "应用模型标准化匹配",
+        "deprecated": false,
+        "description": "重新校验预览项后，原子更新模型元数据、价格配置、渠道模型映射和 30 天兼容别名。👨‍💼 需要管理员权限（Admin）",
+        "tags": [
+          "模型管理"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {}
+          },
+          "409": {
+            "description": "预览已过期或存在冲突",
+            "headers": {}
+          }
+        },
+        "security": [
+          {
+            "Combination343": []
+          },
+          {
+            "Combination1243": []
+          }
+        ]
+      }
+    },
+    "/api/models/aliases": {
+      "get": {
+        "summary": "查询模型兼容别名",
+        "deprecated": false,
+        "description": "查询活动、到期或已停用别名及最近使用信息。👨‍💼 需要管理员权限（Admin）",
+        "tags": [
+          "模型管理"
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "active",
+                "expired",
+                "retired"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {}
+          }
+        },
+        "security": [
+          {
+            "Combination343": []
+          },
+          {
+            "Combination1243": []
+          }
+        ]
+      }
+    },
+    "/api/models/aliases/retire": {
+      "post": {
+        "summary": "停用模型兼容别名",
+        "deprecated": false,
+        "description": "先将 Token 模型限制中的旧名迁移为标准名，再停用指定别名。👨‍💼 需要管理员权限（Admin）",
+        "tags": [
+          "模型管理"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {}
+          }
+        },
+        "security": [
+          {
+            "Combination343": []
+          },
+          {
+            "Combination1243": []
+          }
+        ]
+      }
+    },
     "/api/models/sync_upstream/preview": {
       "get": {
         "summary": "预览上游模型同步",
