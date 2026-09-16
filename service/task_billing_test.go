@@ -291,7 +291,7 @@ func TestTaskBillingOtherRecordsRequestedCanonicalAndUpstreamNames(t *testing.T)
 	task.Properties.OriginModelName = "gpt-5"
 	task.Properties.UpstreamModelName = "commandcode-gpt-5"
 
-	other := taskBillingOtherMap(t, taskBillingOther(task))
+	other := taskBillingOther(task).Snapshot()
 
 	assert.Equal(t, "OpenAI/GPT-5", other["requested_model_name"])
 	assert.Equal(t, "commandcode-gpt-5", other["upstream_model_name"])
