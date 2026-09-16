@@ -3,6 +3,7 @@ package model
 import (
 	"fmt"
 	"maps"
+	"slices"
 	"strings"
 
 	"sync"
@@ -120,7 +121,65 @@ func GetModelSupportEndpointTypes(model string) []constant.EndpointType {
 	return make([]constant.EndpointType, 0)
 }
 
-func getPricingEndpointTypesForAbility(ability AbilityWithChannel, advancedCustomConfigs map[int]*dto.AdvancedCustomConfig) []constant.EndpointType {
+func pluginEndpointTypesForModel(meta jsplugin.Meta, modelName string) []constant.EndpointType {
+	endpointTypes := make([]constant.EndpointType, 0, len(meta.Protocols))
+	for _, claim := range meta.Protocols {
+		if len(claim.Models) > 0 {
+			matched := false
+			for _, claimedModel := range claim.Models {
+				if claimedModel == modelName {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				continue
+			}
+		}
+
+		var endpointType constant.EndpointType
+		switch claim.Name {
+		case "openai_responses":
+			endpointType = constant.EndpointTypeOpenAIResponse
+		case "openai_video":
+			endpointType = constant.EndpointTypeOpenAIVideo
+		default:
+			continue
+		}
+		if !slices.Contains(endpointTypes, endpointType) {
+			endpointTypes = append(endpointTypes, endpointType)
+		}
+	}
+	return endpointTypes
+}
+
+func pluginCatalogFallback(meta jsplugin.Meta, modelName string) ModelCatalogMetadata {
+	metadata := ModelCatalogMetadata{
+		Description: strings.TrimSpace(meta.Description["en"]),
+		Icon:        strings.TrimSpace(meta.Icon),
+	}
+	for _, endpointType := range pluginEndpointTypesForModel(meta, modelName) {
+		if endpointType != constant.EndpointTypeOpenAIVideo {
+			continue
+		}
+		metadata.Categories = []relaytypes.ModelCategory{relaytypes.ModelCategoryVideo}
+		metadata.Architecture = ModelArchitecture(nil, []string{"video"})
+		break
+	}
+	return metadata
+}
+
+func getPricingEndpointTypesForAbility(
+	ability AbilityWithChannel,
+	advancedCustomConfigs map[int]*dto.AdvancedCustomConfig,
+	pluginGeneration *jsplugin.RoutingGeneration,
+) []constant.EndpointType {
+	if ability.ChannelType == constant.ChannelTypeTaskPlugin {
+		if plugin, ok := pluginGeneration.GetByModel(ability.Model); ok {
+			return pluginEndpointTypesForModel(plugin.Meta, ability.Model)
+		}
+		return nil
+	}
 	if ability.ChannelType != constant.ChannelTypeAdvancedCustom {
 		return common.GetEndpointTypesByChannelType(ability.ChannelType, ability.Model)
 	}
@@ -285,11 +344,12 @@ func updatePricing() {
 	//这里使用切片而不是Set，因为一个模型可能支持多个端点类型，并且第一个端点是优先使用端点
 	modelSupportEndpointsStr := make(map[string][]string)
 	advancedCustomConfigs := loadPricingAdvancedCustomConfigs(enableAbilities)
+	pluginGeneration := jsplugin.DefaultRegistry.Generation()
 
 	// 先根据已有能力填充原生端点
 	for _, ability := range enableAbilities {
 		endpoints := modelSupportEndpointsStr[ability.Model]
-		channelTypes := getPricingEndpointTypesForAbility(ability, advancedCustomConfigs)
+		channelTypes := getPricingEndpointTypesForAbility(ability, advancedCustomConfigs, pluginGeneration)
 		for _, channelType := range channelTypes {
 			if !common.StringsContains(endpoints, string(channelType)) {
 				endpoints = append(endpoints, string(channelType))
@@ -369,7 +429,6 @@ func updatePricing() {
 
 	pricingMap = make([]Pricing, 0)
 	modelCatalogMetadata := make(map[string]ModelCatalogMetadata)
-	pluginGeneration := jsplugin.DefaultRegistry.Generation()
 	for model, groups := range modelGroupsMap {
 		pricing := Pricing{
 			ModelName:              model,
@@ -383,6 +442,7 @@ func updatePricing() {
 			Categories: CatalogModelCategories(nil),
 		}
 
+		allowPluginCatalogFallback := true
 		// 补充模型元数据（描述、标签、供应商、状态）
 		if meta, ok := metaMap[model]; ok {
 			// 若模型被禁用(status!=1)，则直接跳过，不返回给前端
@@ -411,6 +471,24 @@ func updatePricing() {
 			}
 			if vendor := vendorMap[meta.VendorID]; vendor != nil {
 				catalogMetadata.Vendor = vendor.Name
+			}
+			allowPluginCatalogFallback = meta.MetadataStatus == ModelMetadataStatusPending && meta.MetadataSource != ModelMetadataSourceManual
+		}
+		if allowPluginCatalogFallback {
+			if plugin, ok := pluginGeneration.GetByModel(model); ok {
+				fallback := pluginCatalogFallback(plugin.Meta, model)
+				if pricing.Description == "" {
+					pricing.Description = fallback.Description
+					catalogMetadata.Description = fallback.Description
+				}
+				if pricing.Icon == "" {
+					pricing.Icon = fallback.Icon
+					catalogMetadata.Icon = fallback.Icon
+				}
+				if catalogMetadata.Architecture == nil && fallback.Architecture != nil {
+					catalogMetadata.Architecture = fallback.Architecture
+					catalogMetadata.Categories = fallback.Categories
+				}
 			}
 		}
 		pricing.Architecture = relaytypes.CloneModelArchitecture(catalogMetadata.Architecture)
