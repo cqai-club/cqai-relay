@@ -15,9 +15,13 @@ func CloneModelArchitecture(value *ModelArchitecture) *ModelArchitecture {
 	if value == nil {
 		return nil
 	}
+	inputModalities := make([]string, len(value.InputModalities))
+	copy(inputModalities, value.InputModalities)
+	outputModalities := make([]string, len(value.OutputModalities))
+	copy(outputModalities, value.OutputModalities)
 	return &ModelArchitecture{
 		Modality:         value.Modality,
-		InputModalities:  append([]string(nil), value.InputModalities...),
-		OutputModalities: append([]string(nil), value.OutputModalities...),
+		InputModalities:  inputModalities,
+		OutputModalities: outputModalities,
 	}
 }
