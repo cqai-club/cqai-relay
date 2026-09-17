@@ -38,6 +38,7 @@ services:
       - TZ=Asia/Shanghai
       - BATCH_UPDATE_ENABLED=true
       - MODEL_METADATA_AUTO_RECONCILE_ENABLED=${MODEL_METADATA_AUTO_RECONCILE_ENABLED:-false}
+      - SYNC_UPSTREAM_BASE=${SYNC_UPSTREAM_BASE:-https://cqai-club.github.io/llm-metadata}
       # Local HTTP dev mode: keep Secure=false and leave TRUSTED_URL unset. This disables the refresh/logout OriginGuard so the :3001 -> :3000 dev proxy works.
       - SESSION_COOKIE_SECURE=false
       # For HTTPS only: set Secure=true and list every exact trusted HTTPS browser Origin. This does not configure relay CORS.
