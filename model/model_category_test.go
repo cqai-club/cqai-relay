@@ -3,8 +3,10 @@ package model
 import (
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestModelCategoryNormalizationPreservesSupportedOrderAndFallback(t *testing.T) {
@@ -60,6 +62,19 @@ func TestModelArchitecturePreservesUnknownModalities(t *testing.T) {
 		InputModalities:  []string{"text", "depth"},
 		OutputModalities: []string{"text"},
 	}, architecture)
+}
+
+func TestModelArchitectureSerializesEmptyModalitiesAsArraysAfterClone(t *testing.T) {
+	architecture := types.CloneModelArchitecture(ModelArchitecture(nil, []string{"video"}))
+	require.NotNil(t, architecture)
+
+	payload, err := common.Marshal(architecture)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{
+		"modality": "->video",
+		"input_modalities": [],
+		"output_modalities": ["video"]
+	}`, string(payload))
 }
 
 func TestNormalizeStructuredMetadataPreservesConfirmedSpecializedCategory(t *testing.T) {
