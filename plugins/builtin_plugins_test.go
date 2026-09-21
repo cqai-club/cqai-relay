@@ -63,7 +63,7 @@ func TestBuiltInVendorPluginsDeclareNativeRoutesAndLegacyChannelTypes(t *testing
 }
 
 func TestBuiltInTaskPluginResponsesAndUsageContracts(t *testing.T) {
-	expectedKeys := []string{"alibaba", "doubao", "google", "hailuo", "jimeng", "kling", "sora", "sunoapi", "vertex-ai", "vidu"}
+	expectedKeys := []string{"alibaba", "doubao", "ejianbao", "google", "hailuo", "jimeng", "kling", "sora", "sunoapi", "vertex-ai", "vidu"}
 	generation := jsplugin.DefaultRegistry.Generation()
 	require.NotNil(t, generation)
 
@@ -87,6 +87,21 @@ func TestBuiltInTaskPluginResponsesAndUsageContracts(t *testing.T) {
 			registry := jsplugin.NewRegistry()
 			plugin, registerErr := registry.RegisterFactory(source, jsplugin.Options{Key: key})
 			require.NoError(t, registerErr)
+			if key == "ejianbao" {
+				// e剪宝 is a generic Task Plugin. It deliberately has no
+				// OpenAI Responses protocol claim or /v1/responses binding.
+				assert.Empty(t, plugin.Meta.Protocols)
+				for _, hook := range []string{"buildSubmitRequest", "parseSubmitResponse", "buildQueryRequest", "parseTaskResult", "listArtifacts", "buildContentRequest"} {
+					callable, callableErr := plugin.Engine.HasExport(t.Context(), hook)
+					require.NoError(t, callableErr)
+					assert.True(t, callable, hook)
+				}
+				require.NotEmpty(t, plugin.Meta.UsageSchema)
+				for usageKey, schema := range plugin.Meta.UsageSchema {
+					assert.NotEmpty(t, schema.Description, usageKey)
+				}
+				return
+			}
 
 			var responsesClaim jsplugin.ProtocolClaim
 			foundResponses := false

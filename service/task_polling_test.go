@@ -25,6 +25,7 @@ import (
 type taskPollingFetchAdaptor struct {
 	mu           sync.Mutex
 	taskIDs      []string
+	requestData  []any
 	fetched      chan string
 	blockTaskID  string
 	blockStarted chan struct{}
@@ -71,6 +72,7 @@ func (a *taskPollingFetchAdaptor) FetchTask(_ string, _ string, body map[string]
 
 	a.mu.Lock()
 	a.taskIDs = append(a.taskIDs, taskID)
+	a.requestData = append(a.requestData, body["data"])
 	a.mu.Unlock()
 	if a.fetched != nil {
 		select {
@@ -115,6 +117,12 @@ func (a *taskPollingFetchAdaptor) fetchedTaskIDs() []string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return append([]string(nil), a.taskIDs...)
+}
+
+func (a *taskPollingFetchAdaptor) fetchedRequestData() []any {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]any(nil), a.requestData...)
 }
 
 func TestRedactVideoResponseBodyPreservesPollingPayloadShape(t *testing.T) {
@@ -224,6 +232,8 @@ func TestDispatchPlatformUpdateUsesFetchMode(t *testing.T) {
 	const channelID = 109
 	seedTaskPollingChannel(t, channelID, true)
 	task := seedPollingTask(t, channelID, "task_batch", "upstream_batch")
+	task.SetData(map[string]any{"status": "completed", "progress_percent": 100})
+	require.NoError(t, task.Update())
 	taskChannels := map[int][]string{channelID: {task.GetUpstreamTaskID()}}
 	tasks := map[string]*model.Task{task.GetUpstreamTaskID(): task}
 
@@ -241,6 +251,9 @@ func TestDispatchPlatformUpdateUsesFetchMode(t *testing.T) {
 	GetTaskAdaptorFunc = func(constant.TaskPlatform) TaskPollingAdaptor { return perTask }
 	DispatchPlatformUpdate(context.Background(), "per-task-plugin", taskChannels, tasks)
 	assert.Equal(t, 1, perTask.fetchCount())
+	data := perTask.fetchedRequestData()
+	require.Len(t, data, 1)
+	assert.Equal(t, map[string]any{"status": "completed", "progress_percent": float64(100)}, data[0])
 
 	GetTaskAdaptorFunc = func(constant.TaskPlatform) TaskPollingAdaptor { return nil }
 	assert.NotPanics(t, func() { DispatchPlatformUpdate(context.Background(), "missing-plugin", taskChannels, tasks) })

@@ -34,6 +34,11 @@ type TaskPollingAdaptor interface {
 	AdjustBillingOnComplete(task *model.Task, taskResult *relaycommon.TaskInfo) int
 }
 
+// Keep the previous response handed to a plugin bounded. Task.Data is already
+// persisted for task views, but an upstream response must not be copied into a
+// JavaScript query context without a size ceiling.
+const maxTaskPluginPreviousDataBytes = 1 << 20
+
 type BatchTaskPollingAdaptor interface {
 	TaskPollingAdaptor
 	FetchMode() string
@@ -447,10 +452,21 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	if privateData.Key != "" {
 		key = privateData.Key
 	}
-	resp, err := adaptor.FetchTask(baseURL, key, map[string]any{
+	queryBody := map[string]any{
 		"task_id": task.GetUpstreamTaskID(),
 		"action":  constant.NormalizeTaskAction(task.Action),
-	}, proxy)
+	}
+	// Preserve the last upstream payload for task plugins that need a bounded
+	// follow-up request after a terminal status (for example, an output index
+	// endpoint that is separate from the run-status endpoint). The payload is
+	// passed to the adaptor only; it is never sent to the upstream by the host.
+	if len(task.Data) > 0 && len(task.Data) <= maxTaskPluginPreviousDataBytes {
+		var previous any
+		if common.Unmarshal(task.Data, &previous) == nil {
+			queryBody["data"] = previous
+		}
+	}
+	resp, err := adaptor.FetchTask(baseURL, key, queryBody, proxy)
 	if err != nil {
 		return fmt.Errorf("fetchTask failed for task %s: %w", taskId, err)
 	}
