@@ -32,6 +32,10 @@ export const meta = {
 
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$/;
 const MODEL = "ejianbao-digitalhuman";
+// InferFlow may return an API-relative download route instead of a signed URL.
+// Keep the accepted path fixed so output metadata cannot point the proxy at an
+// unrelated endpoint or another run.
+const RELATIVE_VIDEO_DOWNLOAD = /^\/openapi\/v1\/runs\/([A-Za-z0-9][A-Za-z0-9._~-]{0,127})\/outputs\/video\/download$/;
 
 function identifier(value) {
   if (typeof value !== "string" || !IDENTIFIER.test(value)) throw new Error("invalid identifier");
@@ -97,7 +101,7 @@ function outputURL(item) {
   if (!item || typeof item !== "object" || Array.isArray(item)) return "";
   for (const key of ["download_url", "downloadUrl", "url"]) {
     const value = item[key];
-    if (typeof value === "string" && /^https:\/\//.test(value)) return value;
+    if (typeof value === "string" && (/^https:\/\//.test(value) || RELATIVE_VIDEO_DOWNLOAD.test(value))) return value;
   }
   return "";
 }
@@ -220,10 +224,22 @@ export function buildContentRequest(ctx) {
   if (ctx.artifactKey !== "video") throw new Error("unknown artifact");
   const url = outputURL(videoOutput(ctx.data));
   if (!url) throw new Error("artifact_not_found");
+  const relative = RELATIVE_VIDEO_DOWNLOAD.exec(url);
+  if (relative) {
+    if (relative[1] !== identifier(ctx.upstreamTaskId)) throw new Error("artifact_not_found");
+    const base = /^(https:\/\/[A-Za-z0-9.-]+(?::[0-9]{1,5})?)\/openapi\/v1\/?$/.exec(ctx.baseUrl);
+    if (!base) throw new Error("invalid InferFlow base URL");
+    return {
+      // This API route requires the channel key and returns the video directly.
+      // The host validates the same-origin URL, preserves client Range headers,
+      // and rejects credentialed cross-origin redirects.
+      url: base[1] + url,
+      method: (ctx.clientRequest && ctx.clientRequest.method) || "GET",
+      headers: upstreamAuth(ctx),
+    };
+  }
   return {
-    // InferFlow returns a signed object-storage URL in the output index. Do
-    // not forward the platform key to that URL; the host's credentialless
-    // proxy follows only safe HTTPS redirects and copies client Range headers.
+    // A signed HTTPS object URL must never receive the platform key.
     url,
     method: (ctx.clientRequest && ctx.clientRequest.method) || "GET",
     credentialless: true,
