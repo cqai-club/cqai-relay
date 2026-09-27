@@ -1,6 +1,9 @@
 package router
 
 import (
+	"net/http"
+
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/controller"
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/gin-gonic/gin"
@@ -15,6 +18,14 @@ func SetTaskRouter(router *gin.Engine) {
 	taskSubmitRouter := router.Group("/v1/tasks")
 	taskSubmitRouter.Use(middleware.RouteTag("relay"), middleware.TokenAuth())
 	{
+		taskSubmitRouter.POST("/:key/quote", func(c *gin.Context) {
+			if c.Param("key") != "ejianbao" {
+				c.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": gin.H{"message": "task quote not found", "type": "invalid_request_error"}})
+				return
+			}
+			c.Set(string(constant.ContextKeyTaskQuoteReadOnly), true)
+			c.Next()
+		}, middleware.PrepareTaskPluginSubmit(), middleware.Distribute(), controller.QuoteTask)
 		taskSubmitRouter.POST("/:key", middleware.PrepareTaskPluginSubmit(), middleware.Distribute(), controller.RelayTask)
 	}
 

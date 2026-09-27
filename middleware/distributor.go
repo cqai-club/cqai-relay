@@ -33,11 +33,16 @@ type ModelRequest struct {
 
 func Distribute() func(c *gin.Context) {
 	return func(c *gin.Context) {
+		quoteReadOnly := common.GetContextKeyBool(c, constant.ContextKeyTaskQuoteReadOnly)
+		requestPath := c.Request.URL.Path
+		if quoteReadOnly {
+			requestPath = strings.TrimSuffix(requestPath, "/quote")
+		}
 		var channel *model.Channel
 		constraints := service.GetChannelConstraints(c)
 		constraints.AddFilter(taskdto.ChannelFilter{
 			Kind:        taskdto.FilterRequestPath,
-			RequestPath: c.Request.URL.Path,
+			RequestPath: requestPath,
 		})
 		service.AppendTaskPluginIdentityFilter(c, c.GetString("expected_task_plugin_key"))
 		modelRequest, shouldSelectChannel, err := getModelRequest(c)
@@ -146,7 +151,9 @@ func Distribute() func(c *gin.Context) {
 									common.SetContextKey(c, constant.ContextKeyAutoGroup, g)
 									channel = preferred
 									affinityUsable = true
-									service.MarkChannelAffinityUsed(c, g, preferred.Id)
+									if !quoteReadOnly {
+										service.MarkChannelAffinityUsed(c, g, preferred.Id)
+									}
 									break
 								}
 							}
@@ -154,10 +161,12 @@ func Distribute() func(c *gin.Context) {
 							channel = preferred
 							selectGroup = usingGroup
 							affinityUsable = true
-							service.MarkChannelAffinityUsed(c, usingGroup, preferred.Id)
+							if !quoteReadOnly {
+								service.MarkChannelAffinityUsed(c, usingGroup, preferred.Id)
+							}
 						}
 					}
-					if !affinityUsable && !service.ShouldKeepChannelAffinityOnChannelDisabled() {
+					if !quoteReadOnly && !affinityUsable && !service.ShouldKeepChannelAffinityOnChannelDisabled() {
 						service.ClearCurrentChannelAffinityCache(c)
 					}
 				}
@@ -167,7 +176,7 @@ func Distribute() func(c *gin.Context) {
 						Ctx:         c,
 						ModelName:   modelRequest.Model,
 						TokenGroup:  usingGroup,
-						RequestPath: c.Request.URL.Path,
+						RequestPath: requestPath,
 						Retry:       common.GetPointer(0),
 					})
 					if err != nil {
@@ -200,13 +209,17 @@ func Distribute() func(c *gin.Context) {
 				return
 			}
 		}
-		if activeAlias != nil {
+		if activeAlias != nil && !quoteReadOnly {
 			model.MarkModelAliasUsed(requestedModelName)
 		}
 		common.SetContextKey(c, constant.ContextKeyRequestStartTime, time.Now())
-		SetupContextForSelectedChannel(c, channel, modelRequest.Model)
+		setupErr := SetupContextForSelectedChannel(c, channel, modelRequest.Model)
+		if quoteReadOnly && setupErr != nil {
+			abortWithOpenAiMessage(c, setupErr.StatusCode, setupErr.Err.Error(), setupErr.GetErrorCode())
+			return
+		}
 		c.Next()
-		if channel != nil && c.Writer != nil && c.Writer.Status() < http.StatusBadRequest {
+		if !quoteReadOnly && channel != nil && c.Writer != nil && c.Writer.Status() < http.StatusBadRequest {
 			service.RecordChannelAffinity(c, channel.Id)
 		}
 	}
@@ -662,6 +675,14 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 	common.SetContextKey(c, constant.ContextKeyChannelModelMapping, channel.GetModelMapping())
 	common.SetContextKey(c, constant.ContextKeyChannelStatusCodeMapping, channel.GetStatusCodeMapping())
 
+	if common.GetContextKeyBool(c, constant.ContextKeyTaskQuoteReadOnly) && channel.ChannelInfo.IsMultiKey {
+		return types.NewErrorWithStatusCode(
+			errors.New("task quote requires a single-key channel"),
+			types.ErrorCodeGetChannelFailed,
+			http.StatusServiceUnavailable,
+			types.ErrOptionWithSkipRetry(),
+		)
+	}
 	key, index, newAPIError := channel.GetNextEnabledKey()
 	if newAPIError != nil {
 		return newAPIError

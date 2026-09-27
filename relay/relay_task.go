@@ -188,6 +188,50 @@ func ApplyOriginTaskAffinity(c *gin.Context, info *relaycommon.RelayInfo) *dto.T
 	return ApplyChannelPin(c, info)
 }
 
+// QuoteTieredTaskUsage calculates the same request-fact pre-consume amount as
+// task submission, without opening a billing session or contacting upstream.
+func QuoteTieredTaskUsage(c *gin.Context, info *relaycommon.RelayInfo, modelName string, facts map[string]any) (int, *dto.TaskError) {
+	info.InitChannelMeta(c)
+	info.OriginModelName = modelName
+	info.UpstreamModelName = modelName
+	if err := helper.ModelMappedHelper(c, info, nil); err != nil {
+		return 0, service.TaskErrorWrapperLocal(err, "model_mapping_failed", http.StatusBadRequest)
+	}
+	if billing_setting.GetBillingMode(modelName) != billing_setting.BillingModeTieredExpr {
+		return 0, service.TaskErrorWrapperLocal(errors.New("task quote requires usage-expression billing"), "model_price_error", http.StatusServiceUnavailable)
+	}
+	priceData, taskErr := priceTieredTaskUsage(c, info, modelName, facts)
+	if taskErr != nil {
+		return 0, taskErr
+	}
+	if info.QuotaClamp != nil {
+		return 0, service.TaskErrorWrapperLocal(info.QuotaClamp, "model_price_error", http.StatusBadRequest)
+	}
+	if priceData.Quota < 0 {
+		return 0, service.TaskErrorWrapperLocal(errors.New("task quote produced a negative quota"), "model_price_error", http.StatusBadRequest)
+	}
+	return priceData.Quota, nil
+}
+
+func priceTieredTaskUsage(c *gin.Context, info *relaycommon.RelayInfo, modelName string, facts map[string]any) (types.PriceData, *dto.TaskError) {
+	exprStr, exists := billing_setting.GetBillingExpr(modelName)
+	if !exists {
+		return types.PriceData{}, service.TaskErrorWrapper(fmt.Errorf("task model %s has no usage expression", modelName), "model_price_error", http.StatusBadRequest)
+	}
+	cost, trace, runErr := billingexpr.RunExprWithRequest(exprStr, billingexpr.TokenParams{}, billingexpr.RequestInput{Usage: facts})
+	if runErr != nil || cost < 0 {
+		if runErr == nil {
+			runErr = errors.New("negative task expression result")
+		}
+		return types.PriceData{}, service.TaskErrorWrapper(runErr, "model_price_error", http.StatusBadRequest)
+	}
+	groupRatioInfo := helper.HandleGroupRatio(c, info)
+	quota, clamp := common.QuotaRoundChecked(cost * common.QuotaPerUnit * groupRatioInfo.GroupRatio)
+	noteTaskQuotaClamp(info, clamp)
+	info.TieredBillingSnapshot = &billingexpr.BillingSnapshot{BillingMode: billing_setting.BillingModeTieredExpr, ModelName: modelName, ExprString: exprStr, ExprHash: billingexpr.ExprHashString(exprStr), GroupRatio: groupRatioInfo.GroupRatio, EstimatedQuotaBeforeGroup: cost * common.QuotaPerUnit, EstimatedQuotaAfterGroup: quota, EstimatedTier: trace.MatchedTier, QuotaPerUnit: common.QuotaPerUnit, ExprVersion: billingexpr.ExprVersion(exprStr), TaskUsageBilling: true, UsageFacts: facts}
+	return types.PriceData{Quota: quota, QuotaToPreConsume: quota, GroupRatioInfo: groupRatioInfo}, nil
+}
+
 // RelayTaskSubmit 完成 task 提交的全部流程（每次尝试调用一次）：
 // 刷新渠道元数据 → 确定 platform/adaptor → 验证请求 →
 // 估算计费(EstimateBilling) → 计算价格 → 预扣费（仅首次）→
@@ -234,9 +278,8 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 	var priceData types.PriceData
 	var err error
 	if billing_setting.GetBillingMode(modelName) == billing_setting.BillingModeTieredExpr {
-		exprStr, exists := billing_setting.GetBillingExpr(modelName)
 		provider, supported := adaptor.(channel.TaskUsageFactsProvider)
-		if !exists || !supported {
+		if !supported {
 			return nil, service.TaskErrorWrapper(fmt.Errorf("task model %s has no usage expression or meter", modelName), "model_price_error", http.StatusBadRequest)
 		}
 		var facts map[string]any
@@ -248,18 +291,11 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 		} else {
 			facts = provider.ExtractUsageFacts(c, info)
 		}
-		cost, trace, runErr := billingexpr.RunExprWithRequest(exprStr, billingexpr.TokenParams{}, billingexpr.RequestInput{Usage: facts})
-		if runErr != nil || cost < 0 {
-			if runErr == nil {
-				runErr = fmt.Errorf("negative task expression result")
-			}
-			return nil, service.TaskErrorWrapper(runErr, "model_price_error", http.StatusBadRequest)
+		var taskErr *dto.TaskError
+		priceData, taskErr = priceTieredTaskUsage(c, info, modelName, facts)
+		if taskErr != nil {
+			return nil, taskErr
 		}
-		groupRatioInfo := helper.HandleGroupRatio(c, info)
-		quota, clamp := common.QuotaRoundChecked(cost * common.QuotaPerUnit * groupRatioInfo.GroupRatio)
-		noteTaskQuotaClamp(info, clamp)
-		priceData = types.PriceData{Quota: quota, QuotaToPreConsume: quota, GroupRatioInfo: groupRatioInfo}
-		info.TieredBillingSnapshot = &billingexpr.BillingSnapshot{BillingMode: billing_setting.BillingModeTieredExpr, ModelName: modelName, ExprString: exprStr, ExprHash: billingexpr.ExprHashString(exprStr), GroupRatio: groupRatioInfo.GroupRatio, EstimatedQuotaBeforeGroup: cost * common.QuotaPerUnit, EstimatedQuotaAfterGroup: quota, EstimatedTier: trace.MatchedTier, QuotaPerUnit: common.QuotaPerUnit, ExprVersion: billingexpr.ExprVersion(exprStr), TaskUsageBilling: true, UsageFacts: facts}
 	} else {
 		priceData, err = helper.ModelPriceHelperPerCall(c, info)
 		if err != nil {
@@ -294,6 +330,10 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 		quota, clamp := common.QuotaFromFloatChecked(quotaWithRatios)
 		info.PriceData.Quota = quota
 		noteTaskQuotaClamp(info, clamp)
+	}
+
+	if expected, present := common.GetContextKeyType[int](c, constant.ContextKeyExpectedTaskQuota); present && expected != info.PriceData.Quota {
+		return nil, service.TaskErrorWrapperLocal(errors.New("task quote changed; request a new quote"), "task_quote_changed", http.StatusConflict)
 	}
 
 	// 7. 预扣费（仅首次 — 重试时 info.Billing 已存在，跳过）

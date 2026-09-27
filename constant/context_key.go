@@ -17,6 +17,8 @@ const (
 	ContextKeyTokenId                ContextKey = "token_id"
 	ContextKeyTokenGroup             ContextKey = "token_group"
 	ContextKeyOriginTasks            ContextKey = "origin_tasks"
+	ContextKeyExpectedTaskQuota      ContextKey = "expected_task_quota"
+	ContextKeyTaskQuoteReadOnly      ContextKey = "task_quote_read_only"
 	ContextKeyChannelConstraints     ContextKey = "channel_constraints"
 	ContextKeyTokenModelLimitEnabled ContextKey = "token_model_limit_enabled"
 	ContextKeyTokenModelLimit        ContextKey = "token_model_limit"

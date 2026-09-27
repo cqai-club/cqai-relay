@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -13,9 +14,11 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
+	pluginruntime "github.com/QuantumNous/new-api/pkg/jsplugin"
 	"github.com/QuantumNous/new-api/relay"
 	relaychannel "github.com/QuantumNous/new-api/relay/channel"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	kittypes "github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
@@ -33,6 +36,45 @@ var (
 	errTaskArtifactPluginUnavailable = errors.New("task artifact plugin unavailable")
 	errTaskArtifactPlugin            = errors.New("task artifact plugin error")
 )
+
+// QuoteTask returns the exact pre-consume amount for an e剪宝 task without
+// reserving quota, creating a task, or sending an upstream request.
+func QuoteTask(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	const modelName = "ejianbao-digitalhuman"
+	if c.Param("key") != "ejianbao" || c.GetString("resolved_task_model") != modelName {
+		respondTaskError(c, service.TaskErrorWrapperLocal(errors.New("unsupported task quote model"), "invalid_request", http.StatusBadRequest))
+		return
+	}
+	pinnedValue, exists := c.Get(pluginruntime.ContextKeyPinnedPlugin)
+	pinned, ok := pinnedValue.(pluginruntime.PinnedPlugin)
+	if !exists || !ok || pinned.Plugin == nil || pinned.Plugin.Meta.Key != "ejianbao" || !slices.Contains(pinned.Plugin.Meta.Models, modelName) {
+		respondTaskError(c, service.TaskErrorWrapperLocal(errors.New("task quote plugin is unavailable"), "task_plugin_unavailable", http.StatusServiceUnavailable))
+		return
+	}
+	if common.GetContextKeyInt(c, constant.ContextKeyChannelType) != constant.ChannelTypeTaskPlugin || c.GetString("task_plugin_key") != "ejianbao" {
+		respondTaskError(c, service.TaskErrorWrapperLocal(errors.New("task quote channel is unavailable"), "task_channel_unavailable", http.StatusServiceUnavailable))
+		return
+	}
+	var request struct {
+		Seconds *int `json:"seconds"`
+	}
+	if err := common.UnmarshalBodyReusable(c, &request); err != nil || request.Seconds == nil || *request.Seconds < 10 || *request.Seconds > 1800 {
+		respondTaskError(c, service.TaskErrorWrapperLocal(errors.New("seconds must be an integer from 10 to 1800"), "invalid_request", http.StatusBadRequest))
+		return
+	}
+	info, err := relaycommon.GenRelayInfo(c, kittypes.RelayFormatTask, nil, nil)
+	if err != nil {
+		respondTaskError(c, service.TaskErrorWrapperLocal(err, "gen_relay_info_failed", http.StatusInternalServerError))
+		return
+	}
+	quota, taskErr := relay.QuoteTieredTaskUsage(c, info, modelName, map[string]any{"seconds": float64(*request.Seconds)})
+	if taskErr != nil {
+		respondTaskError(c, taskErr)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"quota": quota, "quota_per_unit": common.QuotaPerUnit, "seconds": *request.Seconds})
+}
 
 func GetTask(c *gin.Context) {
 	task, exists, err := model.GetByTaskId(c.GetInt("id"), c.Param("key"))

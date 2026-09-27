@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"mime"
 	"mime/multipart"
 	"net/http"
@@ -1379,6 +1380,14 @@ func PrepareTaskPluginSubmit() gin.HandlerFunc {
 		if strings.TrimSpace(modelName) == "" {
 			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": gin.H{"message": "model is required", "type": "invalid_request_error"}})
 			return
+		}
+		if raw, present := requestBody["expected_quota"]; present {
+			number, ok := raw.(float64)
+			if !ok || number < 0 || number > float64(common.MaxQuota) || math.Trunc(number) != number {
+				c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": gin.H{"message": "expected_quota must be a non-negative integer quota", "type": "invalid_request_error"}})
+				return
+			}
+			common.SetContextKey(c, constant.ContextKeyExpectedTaskQuota, int(number))
 		}
 		c.Set("task_request", requestBody)
 		c.Set("resolved_task_model", modelName)
