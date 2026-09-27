@@ -185,7 +185,7 @@ export function parseTaskResult(_ctx, body) {
   if (!rawStatus && hasOutputCollection) return { status: "IN_PROGRESS", progress: "99%" };
   let status;
   if (["completed", "partial_success"].includes(rawStatus)) status = "SUCCESS";
-  else if (["queued", "pending", "running", "processing", "in_progress", "submitted"].includes(rawStatus)) status = "IN_PROGRESS";
+  else if (["queued", "pending", "running", "processing", "in_progress", "submitted", "voice_generating", "video_generating"].includes(rawStatus)) status = "IN_PROGRESS";
   else throw new Error("unknown digital-human task status");
   if (status === "SUCCESS" && !videoOutput(body)) status = "IN_PROGRESS";
   const progress = Number(body.progress_percent);
