@@ -398,6 +398,49 @@ func TestListModelsUsesAdvancedCustomEndpointTypesFromPricingCache(t *testing.T)
 	}, payload.Data[0].SupportedEndpointTypes)
 }
 
+func TestListModelsIncludesEmbeddingEndpointMetadata(t *testing.T) {
+	withSelfUseModeEnabled(t)
+	db := setupModelListControllerTestDB(t)
+	t.Cleanup(model.InvalidatePricingCache)
+
+	require.NoError(t, db.Create(&model.Channel{
+		Id: 703, Type: constant.ChannelTypeOpenAI, Key: "embedding-channel-key",
+		Status: common.ChannelStatusEnabled, Name: "embedding-channel", Group: "default",
+		Models: "catalog-embedding-array,catalog-embedding-object",
+	}).Error)
+	for modelName, endpoints := range map[string]string{
+		"catalog-embedding-array":  `["embeddings"]`,
+		"catalog-embedding-object": `{"embeddings":"/v1/embeddings"}`,
+	} {
+		require.NoError(t, db.Create(&model.Ability{
+			Group: "default", Model: modelName, ChannelId: 703, Enabled: true,
+		}).Error)
+		require.NoError(t, db.Create(&model.Model{
+			ModelName: modelName, Endpoints: endpoints,
+			Capabilities:    []types.ModelCategory{types.ModelCategoryOther},
+			InputModalities: []string{"text"}, OutputModalities: []string{"embedding"},
+			MetadataStatus: model.ModelMetadataStatusConfirmed, MetadataSource: model.ModelMetadataSourceBaseLLMExact,
+			Status: 1, SyncOfficial: 1,
+		}).Error)
+	}
+	model.RefreshPricing()
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	common.SetContextKey(ctx, constant.ContextKeyUserGroup, "default")
+	ListModels(ctx, constant.ChannelTypeOpenAI)
+
+	payload := decodeListModelsPayload(t, recorder)
+	require.Len(t, payload.Data, 2)
+	for _, item := range payload.Data {
+		assert.Equal(t, []constant.EndpointType{constant.EndpointTypeOpenAI, constant.EndpointTypeEmbeddings}, item.SupportedEndpointTypes)
+		assert.Equal(t, []types.ModelCategory{types.ModelCategoryOther}, item.Categories)
+		require.NotNil(t, item.Architecture)
+		assert.Equal(t, []string{"embedding"}, item.Architecture.OutputModalities)
+	}
+}
+
 func TestListModelsIncludesCatalogMetadataAndFallbackCategory(t *testing.T) {
 	withSelfUseModeEnabled(t)
 	db := setupModelListControllerTestDB(t)
