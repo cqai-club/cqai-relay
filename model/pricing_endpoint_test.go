@@ -162,6 +162,62 @@ func TestPricingModelMetadataEndpointsCanProvideEndpointWithoutChannelInference(
 	assert.Equal(t, []constant.EndpointType{constant.EndpointTypeOpenAI}, byModel["metadata-only-model"])
 }
 
+func TestPricingEmbeddingEndpointMetadataFormats(t *testing.T) {
+	tests := []struct {
+		name      string
+		endpoints string
+		want      []constant.EndpointType
+	}{
+		{
+			name:      "catalog array",
+			endpoints: `["embeddings"]`,
+			want:      []constant.EndpointType{constant.EndpointTypeOpenAI, constant.EndpointTypeEmbeddings},
+		},
+		{
+			name:      "array preserves order and removes duplicates",
+			endpoints: `["embeddings", "openai", "embeddings"]`,
+			want:      []constant.EndpointType{constant.EndpointTypeOpenAI, constant.EndpointTypeEmbeddings},
+		},
+		{
+			name:      "custom path object",
+			endpoints: `{"embeddings":"/v1/embeddings"}`,
+			want:      []constant.EndpointType{constant.EndpointTypeOpenAI, constant.EndpointTypeEmbeddings},
+		},
+		{
+			name:      "custom request object",
+			endpoints: `{"embeddings":{"path":"/v1/embeddings","method":"POST"}}`,
+			want:      []constant.EndpointType{constant.EndpointTypeOpenAI, constant.EndpointTypeEmbeddings},
+		},
+		{
+			name:      "invalid custom declaration",
+			endpoints: `{"embeddings":false}`,
+			want:      []constant.EndpointType{constant.EndpointTypeOpenAI},
+		},
+		{
+			name:      "malformed metadata",
+			endpoints: `["embeddings"`,
+			want:      []constant.EndpointType{constant.EndpointTypeOpenAI},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			resetPricingEndpointTestTables(t)
+			insertPricingEndpointChannel(t, 105, constant.ChannelTypeOpenAI, dto.ChannelOtherSettings{})
+			insertPricingEndpointAbility(t, 105, "declared-embedding-model")
+			require.NoError(t, DB.Create(&Model{
+				ModelName: "declared-embedding-model",
+				Endpoints: test.endpoints,
+				Status:    1,
+				NameRule:  NameRuleExact,
+			}).Error)
+
+			byModel := pricingEndpointTypesByModel(t)
+			assert.Equal(t, test.want, byModel["declared-embedding-model"])
+			assert.Equal(t, test.want, GetModelSupportEndpointTypes("declared-embedding-model"))
+		})
+	}
+}
+
 func TestPricingAdvancedCustomMissingConfigFallsBackToChannelType(t *testing.T) {
 	resetPricingEndpointTestTables(t)
 

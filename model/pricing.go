@@ -358,23 +358,30 @@ func updatePricing() {
 		modelSupportEndpointsStr[ability.Model] = endpoints
 	}
 
-	// 再补充模型自定义端点：若配置有效则追加到已有推断，不再裁剪渠道真实能力
+	// 再补充目录端点数组或自定义端点对象，不裁剪渠道真实能力。
 	for modelName, meta := range metaMap {
 		if strings.TrimSpace(meta.Endpoints) == "" {
 			continue
 		}
-		var raw map[string]interface{}
-		if err := common.Unmarshal([]byte(meta.Endpoints), &raw); err == nil {
-			endpoints := modelSupportEndpointsStr[modelName]
-			for k, v := range raw {
-				switch v.(type) {
-				case string, map[string]interface{}:
-					endpoints = appendPricingEndpoint(endpoints, k)
+		endpoints := modelSupportEndpointsStr[modelName]
+		var catalogEndpoints []constant.EndpointType
+		if err := common.Unmarshal([]byte(meta.Endpoints), &catalogEndpoints); err == nil {
+			for _, endpoint := range catalogEndpoints {
+				endpoints = appendPricingEndpoint(endpoints, string(endpoint))
+			}
+		} else {
+			var raw map[string]interface{}
+			if err := common.Unmarshal([]byte(meta.Endpoints), &raw); err == nil {
+				for k, v := range raw {
+					switch v.(type) {
+					case string, map[string]interface{}:
+						endpoints = appendPricingEndpoint(endpoints, k)
+					}
 				}
 			}
-			if len(endpoints) > 0 {
-				modelSupportEndpointsStr[modelName] = endpoints
-			}
+		}
+		if len(endpoints) > 0 {
+			modelSupportEndpointsStr[modelName] = endpoints
 		}
 	}
 
